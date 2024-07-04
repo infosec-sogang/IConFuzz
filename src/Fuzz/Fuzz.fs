@@ -139,7 +139,7 @@ let run args =
   log "Time limit : %d s" opt.Timelimit
   Async.Start (fuzzingTimer opt)
   createDirectoryIfNotExists opt.OutDir
-  TCManage.initialize opt.OutDir
+  TCManage.initialize opt.OutDir opt.TargetBugs
   Executor.initialize opt.ProgPath
   let contSpec, initSeeds = if opt.StaticDFA then initializeWithDFA opt
                             else initializeWithoutDFA opt

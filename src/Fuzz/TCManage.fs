@@ -10,11 +10,16 @@ open Utils
 let mutable tcDir = ""
 let mutable bugDir = ""
 
-let initialize outDir =
+(*** Target Bugs ***)
+let mutable TargetBugs = [||]
+
+let initialize outDir targetBugList =
   tcDir <- System.IO.Path.Combine(outDir, "testcase")
   System.IO.Directory.CreateDirectory(tcDir) |> ignore
   bugDir <- System.IO.Path.Combine(outDir, "bug")
   System.IO.Directory.CreateDirectory(bugDir) |> ignore
+  if Array.isEmpty targetBugList then TargetBugs <- [|(BugClass.IntegerBug, -1)|]
+  else TargetBugs <- targetBugList
 
 (*** Statistics ***)
 
@@ -107,6 +112,14 @@ let private dumpBug opt seed bugSet =
   if opt.Verbosity >= 0 then
     log "[*] Save bug seed %s: %s" tcName (Seed.toString seed)
   System.IO.File.WriteAllText(tcPath, tcStr)
+  let updateTargetBugs (bugClass, pc, _) =
+    TargetBugs <- Array.filter (fun x -> x <> (bugClass, pc)) TargetBugs
+  Set.iter updateTargetBugs bugSet
+  if Array.length TargetBugs = 0 then
+    log "Found all target bugs at %d second (early termination)" (elapsedSec())
+    log "===== Statistics ====="
+    printStatistics ()
+    exit (0)
   totalBug <- totalBug + 1
 
 let private dumpTestCase opt seed =

@@ -2,6 +2,7 @@ module Smartian.Options
 
 open Argu
 open Utils
+open Nethermind.Evm
 
 type FuzzerCLI =
   | [<AltCommandLine("-p")>] [<Mandatory>] [<Unique>] Program of path: string
@@ -9,6 +10,7 @@ type FuzzerCLI =
   | [<AltCommandLine("-t")>] [<Mandatory>] [<Unique>] Timelimit of sec: int
   | [<AltCommandLine("-o")>] [<Mandatory>] [<Unique>] OutputDir of path: string
   | [<AltCommandLine("-a")>] [<Unique>] ABIFile of path: string
+  | [<AltCommandLine("-b")>] [<Unique>] TargetBug of typeAndAddress: string
   | [<Unique>] NoSDFA
   | [<Unique>] NoDDFA
   | [<Unique>] CheckOptionalBugs
@@ -31,6 +33,9 @@ with
         "Report bugs using other tools' oracles as well.\n\
         Currently we support (BD/IB/ME/RE) X (sFuzz/ILF/Mythril/MANTICORE)."
       | InitEther _ -> "Initialize the target contract to have initial ether"
+      | TargetBug _ ->
+        "Target bugs to detect (pairs of bug type and instruction address\n\
+        Ex) -b \"IB:6cb/6cf,RE:4ae\""
 
 type FuzzOption = {
   Verbosity         : int
@@ -43,6 +48,7 @@ type FuzzOption = {
   CheckOptionalBugs : bool
   UseOthersOracle   : bool
   InitEther         : uint64
+  TargetBugs        : (BugClass * int) array
 }
 
 let parseFuzzOption (args: string array) =
@@ -50,6 +56,14 @@ let parseFuzzOption (args: string array) =
   let parser = ArgumentParser.Create<FuzzerCLI> (programName = cmdPrefix)
   let r = try parser.Parse(args) with
           :? Argu.ArguParseException -> printLine (parser.PrintUsage()); exit 1
+  let targetBugStr = r.GetResult (<@ TargetBug @>, defaultValue = "")
+  let targetBugs =
+    targetBugStr.Split [|','|]
+    |> Array.collect (fun target ->
+      let tokens = target.Split [|':'; '/'|]
+      let bug = BugClassHelper.toBugClass tokens.[0]
+      tokens.[1..]
+      |> Array.map (fun addr -> (bug, System.Convert.ToInt32(addr, 16))))
   { Verbosity = r.GetResult (<@ Verbose @>, defaultValue = 1)
     OutDir = r.GetResult (<@ OutputDir @>)
     Timelimit = r.GetResult (<@ Timelimit @>)
@@ -59,4 +73,5 @@ let parseFuzzOption (args: string array) =
     DynamicDFA = not (r.Contains(<@ NoDDFA @>)) // Enabled by default.
     CheckOptionalBugs = r.Contains(<@ CheckOptionalBugs @>)
     UseOthersOracle = r.Contains(<@ UseOthersOracle @>)
-    InitEther = r.GetResult (<@ InitEther @>, defaultValue = 0UL) }
+    InitEther = r.GetResult (<@ InitEther @>, defaultValue = 0UL)
+    TargetBugs = targetBugs }
