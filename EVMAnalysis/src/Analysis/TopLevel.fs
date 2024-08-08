@@ -23,8 +23,7 @@ let private initializeWorkList funcInfos =
   let defs = List.filter (fun i -> not (Set.isEmpty i.Defs)) funcInfos
   let defOnlys, defAndUses = List.partition (fun i -> Set.isEmpty i.Uses) defs
   (defOnlys @ defAndUses)
-  |> List.map (fun fInfo -> FuncSpec.getName fInfo.FuncSpec)
-  |> List.map (fun fName -> [fName])
+  |> List.map (fun fInfo -> [FuncSpec.getName fInfo.FuncSpec])
 
 let private evalDUChain funcInfoMap (funcSeq: Sequence): Set<DUChain> =
   let folder (accChains, accDefMap) f =
@@ -87,8 +86,8 @@ let rec private buildLoop funcInfoMap (accChains, accSeqs) works =
     let newWorks = pruneWorkList (promisings @ tailWorks)
     buildLoop funcInfoMap (accChains, accSeqs) newWorks
 
-let parseOnly binFile abiFile =
-  let _, _, constrFunc, normalFuncs = Parse.run binFile abiFile
+let parseABI abiFile =
+  let constrFunc, normalFuncs = Parse.runWithoutBin abiFile
   ContractSpec.make constrFunc (Array.ofList normalFuncs)
 
 let parseAndAnalyze binFile abiFile =

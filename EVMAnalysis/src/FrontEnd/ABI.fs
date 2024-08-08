@@ -2,6 +2,8 @@ namespace EVMAnalysis
 
 open FSharp.Data
 open FSharp.Data.JsonExtensions
+open B2R2.FrontEnd.BinFile
+open B2R2.MiddleEnd.BinEssence
 
 module ABI =
 
@@ -39,7 +41,16 @@ module ABI =
     | None -> FuncSpec.DEFAULT_CONSTURCTOR // Constructor may have been omitted.
     | Some json -> FuncSpec.initConstructor (parsePayable json) (parseArgs json)
 
-  let tryParseFunc nameToAddr nameToSig (fJson: JsonValue) =
+  let tryResolve essOpt name =
+    match essOpt with
+    | None -> None
+    | Some ess ->
+      let symbols = ess.BinHandle.FileInfo.GetSymbols()
+      let folder1 accMap (s: Symbol) = Map.add s.Name s.Address accMap
+      let nameToAddr = Seq.fold folder1 Map.empty symbols
+      Map.tryFind name nameToAddr
+
+  let tryParseFunc essOpt (fJson: JsonValue) =
     let typ = fJson?``type``.AsString()
     if typ = "fallback" then // Empty signature array and no argument.
       let payable = parsePayable fJson
@@ -48,7 +59,7 @@ module ABI =
       let name = fJson?name.AsString()
       let payable = parsePayable fJson
       let args = parseArgs fJson
-      match Map.tryFind name nameToAddr, Map.tryFind name nameToSig with
-      | Some a, Some s -> Some (FuncSpec.init name s Normal payable a args)
+      match tryResolve essOpt name with
+      | Some a -> Some (FuncSpec.init name Normal payable a args)
       | _ -> printfn "[WARNING] %s addr unfound in trampoline" name; None
     else None

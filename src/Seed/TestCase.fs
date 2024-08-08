@@ -147,7 +147,6 @@ module TXData =
 
   let private REDIRECT_FUNC_SPEC =
     { Name = "redirect"
-      Signature = [| 0xA0uy; 0x49uy; 0x0Euy; 0xC7uy |]
       Kind = Normal
       Payable = true
       OnlyOwner = false
@@ -158,12 +157,10 @@ module TXData =
   let makeData funcSpec args =
     if funcSpec.Kind = Fallback then Array.empty // fallback
     else let typeStrs = Array.map (fun arg -> arg.ArgSpec.TypeStr) args
-         let sig1 = funcSpec.Signature
          let signature = getSignature funcSpec.Name (Array.toList typeStrs)
          let data = encodeData signature (Array.map ArgData.pack args)
-         let sig2 = signature.Address
          if funcSpec.Kind = Constructor then data
-         else Array.append funcSpec.Signature data
+         else Array.append signature.Address data
 
   let makeForAgent addr value data =
     let addrType = { TypeStr = "address"; Kind = ArgType.Address }

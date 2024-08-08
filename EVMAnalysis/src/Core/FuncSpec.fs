@@ -50,7 +50,6 @@ module FuncKind =
 
 type FuncSpec = {
   Name: string
-  Signature: byte array
   Kind: FuncKind
   Payable: bool
   OnlyOwner: bool
@@ -64,7 +63,6 @@ module FuncSpec =
 
   let initConstructor payable args =
     { Name = "constructor"
-      Signature = [| |]
       Kind = Constructor
       Payable = payable
       OnlyOwner = false
@@ -75,27 +73,22 @@ module FuncSpec =
 
   let initFallback payable =
     { Name = "fallback"
-      Signature = [| |]
       Kind = Fallback
       Payable = payable
       OnlyOwner = false
       Entry = 0UL
       ArgSpecs = [| ArgSpec.UInt256 |] }
 
-  let DEFAULT_FALLBACK = initFallback false
-
-  let init name sign kind payable entry args =
+  let init name kind payable entry args =
     { Name = name
-      Signature = sign
       Kind = kind
       Payable = payable
       OnlyOwner = false
       Entry = entry
       ArgSpecs = Array.append [| ArgSpec.UInt256 |] args }
 
-  let initDummy sign kind entry =
+  let initDummy kind entry =
     { Name = ""
-      Signature = sign
       Kind = kind
       Payable = false
       OnlyOwner = false
@@ -103,10 +96,8 @@ module FuncSpec =
       ArgSpecs = [| ArgSpec.UInt256; ArgSpec.UInt256 |] }
 
   let getName func =
-    let signStr = Array.map (sprintf "%02x") func.Signature |> String.concat ""
-    if func.Name <> "" && signStr = "" then sprintf "%s" func.Name
-    elif func.Name <> "" then sprintf "%s(%s)" func.Name signStr
-    else signStr
+    if func.Name <> "" then sprintf "%s" func.Name
+    else sprintf "0x%x" func.Entry
 
 type ContractSpec = {
   Constructor : FuncSpec

@@ -24,7 +24,7 @@ let private initializeWithDFA opt =
   else (contSpec, List.map (sequenceToSeed contSpec) seqs)
 
 let private initializeWithoutDFA opt =
-  let contSpec = TopLevel.parseOnly opt.ProgPath opt.ABIPath
+  let contSpec = TopLevel.parseABI opt.ABIPath
   (contSpec, makeSingletonSeeds contSpec)
 
 /// Allocate testing resource for each strategy (grey-box concolic testing and

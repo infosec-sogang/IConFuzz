@@ -78,7 +78,7 @@ let rec private fixpoint cfgs record (stateMap, fInfo) works =
 
 let run cfgs constrTainted func =
   let name = FuncSpec.getName func
-  printfn "[DEBUG] Analyzing %s @ %x" name func.Entry
+  printfn "[DEBUG] Analyzing function %s" name
   let cfg = Map.find func.Entry cfgs
   let entryBB = if func.Kind = Fallback then CFG.findFallback cfg else cfg.Root
   let entryAddr = BasicBlock.getAddr entryBB
