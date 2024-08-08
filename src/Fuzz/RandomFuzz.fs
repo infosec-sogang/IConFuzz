@@ -3,7 +3,6 @@ module Smartian.RandomFuzz
 open Config
 open Utils
 open BytesUtils
-open EVMAnalysis
 
 let private MUTATE_MAX_POW = 7
 let private ARITH_MAX = 35

@@ -12,7 +12,6 @@ type FuzzerCLI =
   | [<AltCommandLine("-o")>] [<Mandatory>] [<Unique>] OutputDir of path: string
   | [<AltCommandLine("-a")>] [<Unique>] ABIFile of path: string
   | [<AltCommandLine("-b")>] [<Unique>] TargetBug of typeAndAddress: string
-  | [<Unique>] NoSDFA
   | [<Unique>] NoDDFA
   | [<Unique>] CheckOptionalBugs
   | [<Unique>] UseOthersOracle
@@ -26,7 +25,6 @@ with
       | Timelimit _ -> "Timeout for fuzz testing (in seconds)."
       | OutputDir _ -> "Directory to store testcase outputs."
       | ABIFile _ -> "ABI JSON file."
-      | NoSDFA -> "Disable static data-flow analysis to guide fuzzing."
       | NoDDFA -> "Disable dynamic data-flow analysis during the fuzzing."
       | CheckOptionalBugs ->
         "Detect optional bugs (e.g. requirement violation) disabled by default."
@@ -45,7 +43,6 @@ type FuzzOption = {
   Timelimit         : int
   ProgPath          : string
   ABIPath           : string
-  StaticDFA         : bool
   DynamicDFA        : bool
   CheckOptionalBugs : bool
   UseOthersOracle   : bool
@@ -70,7 +67,6 @@ let parseFuzzOption (args: string array) =
     Timelimit = r.GetResult (<@ Timelimit @>)
     ProgPath = r.GetResult (<@ Program @>)
     ABIPath = r.GetResult(<@ ABIFile @>, defaultValue = "")
-    StaticDFA = not (r.Contains(<@ NoSDFA @>))  // Enabled by default.
     DynamicDFA = not (r.Contains(<@ NoDDFA @>)) // Enabled by default.
     CheckOptionalBugs = r.Contains(<@ CheckOptionalBugs @>)
     UseOthersOracle = r.Contains(<@ UseOthersOracle @>)

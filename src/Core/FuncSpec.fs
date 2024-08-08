@@ -1,13 +1,11 @@
-namespace EVMAnalysis
-
-open EVMAnalysis.Config
+namespace Smartian
 
 type SizeType =
   | FixedSize of int
   | UnfixedSize
 
 module SizeType =
-
+  let UNFIXED_ARRAY_INIT_LEN = 4
   let parse sizeStr =
     if sizeStr = "" then UnfixedSize else FixedSize (int sizeStr)
 
@@ -53,7 +51,6 @@ type FuncSpec = {
   Kind: FuncKind
   Payable: bool
   OnlyOwner: bool
-  Entry: uint64
   ArgSpecs: ArgSpec array
 }
 
@@ -66,7 +63,6 @@ module FuncSpec =
       Kind = Constructor
       Payable = payable
       OnlyOwner = false
-      Entry = 0UL
       ArgSpecs = Array.append [| ArgSpec.UInt256 |] args }
 
   let DEFAULT_CONSTURCTOR = initConstructor false [| |]
@@ -76,28 +72,17 @@ module FuncSpec =
       Kind = Fallback
       Payable = payable
       OnlyOwner = false
-      Entry = 0UL
       ArgSpecs = [| ArgSpec.UInt256 |] }
 
-  let init name kind payable entry args =
+  let init name kind payable args =
     { Name = name
       Kind = kind
       Payable = payable
       OnlyOwner = false
-      Entry = entry
       ArgSpecs = Array.append [| ArgSpec.UInt256 |] args }
 
-  let initDummy kind entry =
-    { Name = ""
-      Kind = kind
-      Payable = false
-      OnlyOwner = false
-      Entry = entry
-      ArgSpecs = [| ArgSpec.UInt256; ArgSpec.UInt256 |] }
-
   let getName func =
-    if func.Name <> "" then sprintf "%s" func.Name
-    else sprintf "0x%x" func.Entry
+    if func.Name <> "" then sprintf "%s" func.Name else "unknown"
 
 type ContractSpec = {
   Constructor : FuncSpec

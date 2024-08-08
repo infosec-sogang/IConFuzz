@@ -1,6 +1,5 @@
 module Smartian.Fuzz
 
-open EVMAnalysis
 open Utils
 open Config
 open Options
@@ -10,21 +9,8 @@ let private makeSingletonSeeds contSpec =
   let funcSpecs = contSpec.NormalFunctions |> Array.toList
   List.map (fun funcSpec -> Seed.init constrSpec [| funcSpec |]) funcSpecs
 
-let private sequenceToSeed contSpec seq =
-  let constrSpec = contSpec.Constructor
-  let funcSpecs = contSpec.NormalFunctions
-  let findSpec s = Array.find (fun spec -> FuncSpec.getName spec = s) funcSpecs
-  let funcSpecs = List.map findSpec seq |> List.toArray
-  Seed.init constrSpec funcSpecs
-
-let private initializeWithDFA opt =
-  let contSpec, seqs = TopLevel.parseAndAnalyze opt.ProgPath opt.ABIPath
-  if List.isEmpty seqs // No DU chain at all.
-  then (contSpec, makeSingletonSeeds contSpec)
-  else (contSpec, List.map (sequenceToSeed contSpec) seqs)
-
 let private initializeWithoutDFA opt =
-  let contSpec = TopLevel.parseABI opt.ABIPath
+  let contSpec = ABI.parse opt.ABIPath
   (contSpec, makeSingletonSeeds contSpec)
 
 /// Allocate testing resource for each strategy (grey-box concolic testing and
@@ -141,8 +127,7 @@ let run args =
   createDirectoryIfNotExists opt.OutDir
   TCManage.initialize opt.OutDir opt.TargetBugs
   Executor.initialize opt.ProgPath
-  let contSpec, initSeeds = if opt.StaticDFA then initializeWithDFA opt
-                            else initializeWithoutDFA opt
+  let contSpec, initSeeds = initializeWithoutDFA opt
   let concQ = List.fold ConcolicQueue.enqueue ConcolicQueue.empty initSeeds
   let randQ = List.fold RandFuzzQueue.enqueue (RandFuzzQueue.init ()) initSeeds
   log "Start main fuzzing phase"

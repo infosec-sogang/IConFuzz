@@ -1,7 +1,5 @@
 namespace Smartian
 
-open EVMAnalysis
-
 /// Represents a single argument value, composed of Element array.
 type Arg = {
   Spec : ArgSpec

@@ -4,7 +4,6 @@ open System
 open Utils
 open BytesUtils
 open Config
-open EVMAnalysis
 open Nethermind.Core
 open Nethermind.Dirichlet.Numerics
 open Nethermind.Abi
@@ -151,7 +150,6 @@ module TXData =
       Payable = true
       OnlyOwner = false
       // Belows are not used.
-      Entry = 0UL
       ArgSpecs = [| |] }
 
   let makeData funcSpec args =
@@ -169,7 +167,8 @@ module TXData =
     let valueType = { TypeStr = "uint256"; Kind = ArgType.UInt 32 }
     let valueBytes = bigIntToBytes LE 32 value
     let valueArg = { ArgSpec = valueType; Bytes = valueBytes }
-    let bytesType = { TypeStr = "bytes"; Kind = Array (UnfixedSize, Byte) }
+    let bytesType = { TypeStr = "bytes";
+                      Kind = ArgType.Array (UnfixedSize, ArgType.Byte) }
     let bytesArg = { ArgSpec = bytesType; Bytes = data }
     let args = [| addrArg; valueArg; bytesArg |]
     makeData REDIRECT_FUNC_SPEC args
