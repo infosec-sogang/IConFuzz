@@ -37,8 +37,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\B2R2\src\MiddleEnd\BinGraph\B2R2.MiddleEnd.BinGraph.fsproj" />
+    <ProjectReference Include="..\B2R2\src\FrontEnd\BinLifter\Core\B2R2.FrontEnd.BinLifter.Core.fsproj" />
+    <ProjectReference Include="..\B2R2\src\FrontEnd\BinFile\B2R2.FrontEnd.BinFile.fsproj" />
     <ProjectReference Include="..\B2R2\src\FrontEnd\BinInterface\B2R2.FrontEnd.BinInterface.fsproj" />
+    <ProjectReference Include="..\B2R2\src\BinIR\B2R2.BinIR.fsproj" />
+    <ProjectReference Include="..\B2R2\src\MiddleEnd\BinGraph\B2R2.MiddleEnd.BinGraph.fsproj" />
     <ProjectReference Include="..\B2R2\src\MiddleEnd\BinEssence\B2R2.MiddleEnd.BinEssence.fsproj" />
     <ProjectReference Include="..\B2R2\src\Core\B2R2.Core.fsproj" />
     <ProjectReference Include="..\B2R2\src\MiddleEnd\Reclaimer\B2R2.MiddleEnd.Reclaimer.fsproj" />

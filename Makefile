@@ -10,6 +10,6 @@ $(BUILDDIR):
 	@mkdir -p $(BUILDDIR)
 
 Smartian:
-	@dotnet build -c Release -o $(BUILDDIR)
+	@dotnet build -c Release --property:OutputPath=$(BUILDDIR)
 
 .PHONY: all clean Smartian
