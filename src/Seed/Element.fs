@@ -1,8 +1,6 @@
 namespace Smartian
 
-open EVMAnalysis
 open Config
-open Utils
 open BytesUtils
 
 /// A building block of program input, composed of ByteVal array.
