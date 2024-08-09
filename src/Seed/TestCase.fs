@@ -8,6 +8,7 @@ open Nethermind.Core
 open Nethermind.Dirichlet.Numerics
 open Nethermind.Abi
 open FSharp.Data
+open solAnalysis
 
 type ArgData = {
   ArgSpec : ArgSpec
@@ -161,15 +162,15 @@ module TXData =
          else Array.append signature.Address data
 
   let makeForAgent addr value data =
-    let addrType = { TypeStr = "address"; Kind = ArgType.Address }
+    let addrType = { Name ="Agent"; TypeStr = "address"; Kind = ArgType.Address }
     let addrBytes = Address.toBytes LE addr
-    let addrArg = { ArgSpec = addrType; Bytes = addrBytes }
-    let valueType = { TypeStr = "uint256"; Kind = ArgType.UInt 32 }
+    let addrArg = {ArgSpec = addrType; Bytes = addrBytes }
+    let valueType = {Name = "AgentValue"; TypeStr = "uint256"; Kind = ArgType.UInt 32 }
     let valueBytes = bigIntToBytes LE 32 value
-    let valueArg = { ArgSpec = valueType; Bytes = valueBytes }
-    let bytesType = { TypeStr = "bytes";
+    let valueArg = {ArgSpec = valueType; Bytes = valueBytes }
+    let bytesType = {Name = "AgentBytes"; TypeStr = "bytes";
                       Kind = ArgType.Array (UnfixedSize, ArgType.Byte) }
-    let bytesArg = { ArgSpec = bytesType; Bytes = data }
+    let bytesArg = {ArgSpec = bytesType; Bytes = data }
     let args = [| addrArg; valueArg; bytesArg |]
     makeData REDIRECT_FUNC_SPEC args
 

@@ -2,6 +2,7 @@ module Smartian.ABI
 
 open FSharp.Data
 open FSharp.Data.JsonExtensions
+open solAnalysis
 
 let rec private parseArgKind (str: string) =
   if str.Contains("[") && str.Contains("]") then
@@ -28,8 +29,8 @@ let private parsePayable (json: JsonValue) =
 
 let private parseArgs (json: JsonValue) =
   json?inputs.AsArray()
-  |> Array.map (fun (i: JsonValue) -> i?``type``.AsString())
-  |> Array.map (fun str -> { TypeStr = str; Kind = parseArgKind str })
+  |> Array.map (fun (i: JsonValue) -> (i?``type``.AsString(), i?name.AsString()))
+  |> Array.map (fun (id, str) -> {Name = id; TypeStr = str; Kind = parseArgKind str }) //TODO
 
 let private parseConstructor (funcJsons: JsonValue list) =
   let isConstr (fJson: JsonValue) = fJson?``type``.AsString() = "constructor"

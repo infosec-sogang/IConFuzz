@@ -13,7 +13,6 @@
     <Compile Include="Core/Queue.fs" />
     <Compile Include="Core/Typedef.fs" />
     <Compile Include="Core/Address.fs" />
-    <Compile Include="Core/FuncSpec.fs" />
     <Compile Include="Seed/TestCase.fs" />
     <Compile Include="Seed/ByteVal.fs" />
     <Compile Include="Seed/Element.fs" />
@@ -22,6 +21,7 @@
     <Compile Include="Seed/Seed.fs" />
     <Compile Include="GreyConcolic/BranchInfo.fs" />
     <Compile Include="Fuzz/ABI.fs" />
+    <Compile Include="Fuzz/Solc.fs" />
     <Compile Include="Fuzz/Options.fs" />
     <Compile Include="Fuzz/Executor.fs" />
     <Compile Include="Fuzz/TCManage.fs" />
@@ -54,6 +54,7 @@
     <ProjectReference Include="..\nethermind\src\Nethermind\Nethermind.Core\Nethermind.Core.csproj" />
     <ProjectReference Include="..\nethermind\src\Nethermind\Nethermind.Core.Test\Nethermind.Core.Test.csproj" />
     <ProjectReference Include="..\nethermind\src\Nethermind\Nethermind.Abi\Nethermind.Abi.csproj" />
+    <ProjectReference Include="..\solAnalysis\solAnalysis.fsproj" />
   </ItemGroup>
 
 

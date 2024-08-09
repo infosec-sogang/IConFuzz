@@ -1,17 +1,41 @@
 module Smartian.Fuzz
 
+open solAnalysis
+open System.Diagnostics
 open Utils
 open Config
 open Options
+open Solc
+
+exception BuildError
+
+let mutable program_file = ""
 
 let private makeSingletonSeeds contSpec =
   let constrSpec = contSpec.Constructor
   let funcSpecs = contSpec.NormalFunctions |> Array.toList
   List.map (fun funcSpec -> Seed.init constrSpec [| funcSpec |]) funcSpecs
 
+let private sequenceToSeed contSpec seq =
+  let constrSpec = contSpec.Constructor
+  let funcSpecs = contSpec.NormalFunctions
+  let findSpec s = Array.find (fun spec -> FuncSpec.getName spec = s) funcSpecs
+  let funcSpecs = List.map findSpec seq |> List.toArray
+  Seed.init constrSpec funcSpecs
+
 let private initializeWithoutDFA opt =
   let contSpec = ABI.parse opt.ABIPath
   (contSpec, makeSingletonSeeds contSpec)
+
+let private initializeWithDFA (opt: FuzzOption) =
+  let prog = program_file
+  let outdir, mainContract, solv, cfg = opt.OutDir, opt.MainContract, "0.4.18", false
+  let opt' = { Input = prog; OutDir = outdir; Solv = solv; Main = mainContract; Cfg = cfg }
+  let contSpec, seqs = TopLevel.run opt'
+  if List.isEmpty seqs // No DU chain at all.
+  then (contSpec, makeSingletonSeeds contSpec)
+  else (contSpec, List.map (sequenceToSeed contSpec) seqs)
+
 
 /// Allocate testing resource for each strategy (grey-box concolic testing and
 /// random fuzz testing). Resource is managed through 'the number of allowed
@@ -117,9 +141,23 @@ let private fuzzingTimer opt = async {
   exit (0)
 }
 
+let private prepareBinAbi inputPath solv mainc =
+  let proc = runProcess "bash" (sprintf "%s %s %s %s" "./scripts/build.sh" inputPath solv mainc)
+  proc.WaitForExit()
+  if proc.ExitCode <> 0 then raise BuildError
+
 let run args =
   let opt = parseFuzzOption args
   assertFileExists opt.ProgPath
+  if opt.SolcVersion <> "" then prepareBinAbi opt.ProgPath opt.SolcVersion opt.MainContract
+  else prepareBinAbi opt.ProgPath (decide opt.ProgPath) opt.MainContract
+  let fileName = opt.ProgPath.Split('/') |> Array.last |> fun f -> f.Replace(".sol", "")
+  program_file <- opt.ProgPath
+  let opt = {
+    opt with
+      ProgPath = (sprintf "tmp/bin/%s.bin" fileName);
+      ABIPath = (sprintf "tmp/abi/%s.abi" fileName)
+  }
   log "Fuzz target : %s" opt.ProgPath
   log "Fuzzing starts at %s" (startTime.ToString("hh:mm:ss"))
   log "Time limit : %d s" opt.Timelimit
@@ -127,7 +165,10 @@ let run args =
   createDirectoryIfNotExists opt.OutDir
   TCManage.initialize opt.OutDir opt.TargetBugs
   Executor.initialize opt.ProgPath
-  let contSpec, initSeeds = initializeWithoutDFA opt
+
+  // let contSpec, initSeeds = initializeWithoutDFA opt
+  let contSpec, initSeeds = if opt.DynamicDFA then initializeWithDFA opt
+                            else initializeWithoutDFA opt
   let concQ = List.fold ConcolicQueue.enqueue ConcolicQueue.empty initSeeds
   let randQ = List.fold RandFuzzQueue.enqueue (RandFuzzQueue.init ()) initSeeds
   log "Start main fuzzing phase"

@@ -4,6 +4,7 @@ open Nethermind.Dirichlet.Numerics
 open Config
 open Utils
 open BytesUtils
+open solAnalysis
 
 /// Represents a function call with args.
 type Transaction = {
