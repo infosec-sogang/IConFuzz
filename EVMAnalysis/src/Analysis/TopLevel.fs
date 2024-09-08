@@ -19,6 +19,18 @@ let private analyzeNormalFuncs cfgs constrTainted funcs =
     funcInfo
   List.map mapper funcs
 
+// Return the list of function pairs (f, g) that can have any def-use chain.
+let enumerateDUChains funcs funcInfoMap =
+  let folder acc g =
+    List.fold (fun acc' f ->
+      let gInfo = Map.find g funcInfoMap
+      let fInfo = Map.find f funcInfoMap
+      let fDefs, gUses = fInfo.Defs, gInfo.Uses
+      let interSect = Set.intersect fDefs gUses
+      if Set.isEmpty interSect then acc' else Set.add (f, g) acc'
+    ) acc funcs
+  List.fold folder Set.empty funcs
+
 let private initializeWorkList funcInfos =
   let defs = List.filter (fun i -> not (Set.isEmpty i.Defs)) funcInfos
   let defOnlys, defAndUses = List.partition (fun i -> Set.isEmpty i.Uses) defs
@@ -102,6 +114,12 @@ let parseAndAnalyze binFile abiFile =
   // Now, decide transaction sequence order with the analysis result.
   let folder accMap info = Map.add (FuncSpec.getName info.FuncSpec) info accMap
   let funcInfoMap = List.fold folder Map.empty funcInfos
+  let funcs = List.map (fun fInfo -> FuncSpec.getName fInfo.FuncSpec) funcInfos
+  printfn "\n================== < Def - Use Chain > ==================\n"
+  let duchains = enumerateDUChains funcs funcInfoMap
+  printfn "(%d def-use chains)" (Set.count duchains)
+  let _ = Set.iter (fun seq -> printfn "%A" seq) duchains
+  printfn "\n==================  < Candidate Sequences > ==================\n"
   let initWorks = initializeWorkList funcInfos
   let seqs = buildLoop funcInfoMap (Set.empty, []) initWorks
   printfn "(%d candidate sequences)" (List.length seqs)
