@@ -61,10 +61,10 @@ type ShaOutputModule () =
 
   member __.toVar x =
     match x with
-    | Sha32Byte (i, o) -> ArrayVar(i, o)
-    | Sha64Byte (i, o) -> MapVar (i, o)
-    | Sha32ByteMult (i, o) -> ArrayVar (i, o)
-    | Sha64ByteMult (i, o) -> MapVar (i, o)
+    | Sha32Byte (i, o) -> ArrVar(i, o, 0)
+    | Sha64Byte (i, o) -> MapVar (i, o, 0)
+    | Sha32ByteMult (i, o) -> ArrVar (i, o, 0)
+    | Sha64ByteMult (i, o) -> MapVar (i, o, 0)
 
 let ShaOutput = ShaOutputModule () // Use 'ShaOutput' like a module.
 

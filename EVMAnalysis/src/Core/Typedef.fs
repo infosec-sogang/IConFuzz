@@ -40,22 +40,34 @@ module PartitionIdx =
 
 // State variables.
 type Variable =
-  | Singleton of bigint
-  | ArrayVar of id: bigint * offset: bigint
-  | MapVar of id: bigint * offset: bigint
+  | SingleVar of id: bigint * packOffset: int
+  | ArrVar of id: bigint * structOffset: bigint * packOffset: int
+  | MapVar of id: bigint * structOffset: bigint * packOffset: int
 
 module Variable =
 
+  let private structOffsetToString o =
+    if o = 0I then "" else ".field_" + o.ToString()
+
+  let private packOffsetToString o =
+    if o = 0 then "" else ".[" + o.ToString() + ":]"
+
   let toString = function
-    | Singleton addr -> "var_"  + addr.ToString()
-    | ArrayVar (i, o) ->
+    | SingleVar (i, po) -> "var_"  + i.ToString() + packOffsetToString po
+    | ArrVar (i, so, po) ->
       let arrPart = "arr_" + i.ToString()
-      let offPart = if o = 0I then "" else ".off_" + o.ToString()
-      arrPart + offPart
-    | MapVar (i, o) ->
+      arrPart + structOffsetToString so + packOffsetToString po
+    | MapVar (i, so, po) ->
       let mapPart = "map_" + i.ToString()
-      let offPart = if o = 0I then "" else ".off_" + o.ToString()
-      mapPart + offPart
+      mapPart + structOffsetToString so + packOffsetToString po
+
+  // Set the packing offset of variable 'var' into 'n'.
+  let setPackOffset var n =
+    match var with
+    | SingleVar (i, _) -> SingleVar (i, n)
+    | ArrVar (i, so, _) -> ArrVar (i, so, n)
+    | MapVar (i, so, _) -> MapVar (i, so, n)
+
 
 type DUChain = string * Variable * string // Def function * Var * Use function.
 

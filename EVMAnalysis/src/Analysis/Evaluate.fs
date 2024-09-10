@@ -56,7 +56,9 @@ let private isSenderCheck v1 v2 funcInfo =
 let evalRelOp opType e1 e2 state funcInfo =
   let v1 = eval e1 state
   let v2 = eval e2 state
+  // For sender checking logic (a.k.a. onlyonwer property), decide it here in
+  // the evaluation of relational operation, since it provides more hint.
   let funcInfo = if opType = RelOpType.EQ && isSenderCheck v1 v2 funcInfo
-                 then FuncInfo.addCheckSender funcInfo
+                 then FuncInfo.recordCheckSender funcInfo
                  else funcInfo
   funcInfo, AbsVal.relOp opType v1 v2

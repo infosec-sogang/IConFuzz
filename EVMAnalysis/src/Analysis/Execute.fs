@@ -88,7 +88,11 @@ let private execStmt ctx hasCall hasRec addr (state, funcInfo, transType) stmt =
       elif hasRec then (state, funcInfo, RecursiveCall)
       elif isReturn dst ctx then (state, funcInfo, Ret dst)
       else (state, funcInfo, transType) // Normal jump.
-  | InterCJmp _ -> (state, funcInfo, transType) // No pruning semantics.
+  | InterCJmp ({ E = condExp }, _, _) ->
+    let condVal = eval condExp state
+    printfn "Record the use of %s in JUMPI @ %x" (AbsVal.toString condVal) addr
+    let funcInfo = FuncInfo.recordUse condVal funcInfo
+    (state, funcInfo, transType)
   | SideEffect _ -> (state, funcInfo, transType)
 
 let private checkValidSP addr state =

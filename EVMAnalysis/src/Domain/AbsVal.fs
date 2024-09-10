@@ -24,7 +24,14 @@ type AbsValModule () =
     t
 
   member __.hasTaint t v =
-    Taint.leq t (__.getTaint v)
+    let isEqSrc src1 src2 =
+      match src1, src2 with
+      | Storage (v1, NoOp), Storage (v2, Unpack 0)
+      | Storage (v1, Unpack 0), Storage (v2, NoOp) -> v1 = v2
+      | Storage (v1, Unpack o1), Storage (v2, Unpack o2) -> v1 = v2 && o1 = o2
+      | _, _ -> src1 = src2
+    let vTaint = __.getTaint v
+    Set.forall (fun tSrc -> Set.exists (fun vSrc -> isEqSrc tSrc vSrc) vTaint) t
 
   member __.unknown: AbsVal =
     (FlatInt.top, ShaOutSet.bot, Taint.bot)
@@ -94,7 +101,13 @@ type AbsValModule () =
               ShaOutSet.join (ShaOutSet.addOp s1 i2) (ShaOutSet.addOp s2 i1)
             | BinOpType.SUB -> ShaOutSet.sub s1 i2
             | _ -> ShaOutSet.bot
-    let t = Taint.join (__.getTaint v1) (__.getTaint v2)
+    let t1, t2 = __.getTaint v1, __.getTaint v2
+    let t =
+      match opType, FlatInt.tryGetConst i1, FlatInt.tryGetConst i2 with
+      | BinOpType.AND, Some i, _ -> Taint.AndWithConst i t2
+      | BinOpType.AND, _, Some i -> Taint.AndWithConst i t1
+      | BinOpType.DIV, _, Some i -> Taint.DivWithConst i t1
+      | _, _, _ -> Taint.join t1 t2
     (i, s, t)
 
   member __.relOp opType v1 v2: AbsVal =
@@ -111,6 +124,6 @@ type AbsValModule () =
     let aggrVars = ShaOutSet.toVar (__.getSha v) // ArrVar and MapVar.
     match __.tryGetConst v with
     | None -> aggrVars
-    | Some x -> Set.add (Singleton x) aggrVars
+    | Some x -> Set.add (SingleVar (x, 0)) aggrVars
 
 let AbsVal = AbsValModule() // Use 'AbsVal' like a module.
