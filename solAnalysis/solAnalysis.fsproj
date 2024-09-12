@@ -26,6 +26,7 @@
     <Compile Include="src\pre\Inline.fs" />
     <Compile Include="src\Analysis\Typedef.fs" />
     <Compile Include="src\Analysis\FuncSpec.fs" />
+    <Compile Include="src\Analysis\ImplicitConstraint.fs" />
     <Compile Include="src\Analysis\FuncInfo.fs" />
     <Compile Include="src\Frontend\TopLevel.fs" />
     <Compile Include="src\Main.fs" />

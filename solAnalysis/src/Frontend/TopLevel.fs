@@ -6,13 +6,13 @@ open Translator
 open Solc
 open Global
 open Options
-open FuncInfo
 open Typedef 
 
 type Sequence = string list
+let mutable funcInfoMap = Map.empty
 
 // Return the list of function pairs (f, g) that can have any def-use chain.
-let enumerateDUChains funcs funcInfoMap =
+let enumerateDUChains funcs =
   let folder acc g =
     List.fold (fun acc' f ->
       let gInfo = Map.find g funcInfoMap
@@ -23,6 +23,23 @@ let enumerateDUChains funcs funcInfoMap =
     ) acc funcs
   List.fold folder Set.empty funcs
 
+// Return the list of the function pairs and their constraints if they have any.
+let private enumerateImplicitDUConstraints funcs =
+  let folder acc g =
+    List.fold (fun acc' f ->
+      let gInfo = Map.find g funcInfoMap
+      let fInfo = Map.find f funcInfoMap
+      let fICs, gICs = fInfo.ImplicitConstraints, gInfo.ImplicitConstraints
+      let interSect = 
+        Array.choose (fun fIC ->
+          Array.tryPick (fun gIC -> 
+            if fIC.MappingId = gIC.MappingId && (not (Array.isEmpty fIC.DefKeys) && not (Array.isEmpty gIC.UseKeys)) 
+            then Some {MappingId = fIC.MappingId; DefKeys = fIC.DefKeys; UseKeys = gIC.UseKeys} else None ) gICs ) fICs
+      if Array.isEmpty interSect then acc'
+      else Set.add (f, g, interSect) acc'
+    ) acc funcs
+  List.fold folder Set.empty funcs
+
 let private initializeWorkList funcInfos =
   let defs = List.filter (fun i -> not (Set.isEmpty i.Defs)) funcInfos
   let defOnlys, defAndUses = List.partition (fun i -> Set.isEmpty i.Uses) defs
@@ -30,7 +47,7 @@ let private initializeWorkList funcInfos =
   |> List.map (fun fInfo -> FuncSpec.getName fInfo.FuncSpec)
 
 // Return the set of def-use chains found in the given sequence 'funcSeq'.
-let private evalDUChain funcInfoMap (funcSeq: Sequence): Set<DUChain> =
+let evalDUChain (funcSeq: Sequence): Set<DUChain> =
   let folder (accChains, accDefMap) f =
     let funcInfo = Map.find f funcInfoMap
     let defs = funcInfo.Defs
@@ -49,12 +66,12 @@ let private evalDUChain funcInfoMap (funcSeq: Sequence): Set<DUChain> =
 // From the function sequences 'seqs', find and return the first sequence that
 // can yield a new def-use chain not found in 'accChains'. If none of the 'seqs'
 // can yield a new def-use chain, return an empty list.
-let rec private findDUChainGain funcInfoMap accChains seqs =
+let rec private findDUChainGain accChains seqs =
   match seqs with
   | hdSeq :: tlSeqs ->
-    let duChains = evalDUChain funcInfoMap hdSeq
+    let duChains = evalDUChain hdSeq
     if Set.isEmpty (Set.difference duChains accChains)
-    then findDUChainGain funcInfoMap accChains tlSeqs
+    then findDUChainGain accChains tlSeqs
     else (Set.union accChains duChains, [hdSeq])
   | [] -> (accChains, [])
 
@@ -83,17 +100,17 @@ let rec private pruneWorkList = function
         else true
       headSeq :: pruneWorkList (List.filter filter tailSeqs)
 
-let rec private buildLoop funcInfoMap (accChains, accSeqs) works =
+let rec private buildLoop (accChains, accSeqs) works =
   match works with
   | [] -> accSeqs
   | candidate :: tailWorks ->
     let allFuncNames = Map.keys funcInfoMap
     let appends = List.map (fun f -> candidate @ [f]) allFuncNames
-    let accChains, promisings = findDUChainGain funcInfoMap accChains appends
+    let accChains, promisings = findDUChainGain accChains appends
     let accSeqs = if not (List.isEmpty promisings) then accSeqs
                   else candidate :: accSeqs // Add if no more room to improve.
     let newWorks = pruneWorkList (promisings @ tailWorks)
-    buildLoop funcInfoMap (accChains, accSeqs) newWorks
+    buildLoop (accChains, accSeqs) newWorks
 
 let storeCumulativeByteSize lines =
     let _, lst = 
@@ -120,12 +137,14 @@ let run opt =
     Options.main_contract <- opt.Main
     Options.solc_ver <- opt.Solv
     let (pgm, glb, lines)= preProcess opt 
+    let mainFuncs = pgm |> Lang.get_main_contract |> Lang.get_funcs
     let constrFunc, normalFuncs = FuncSpec.getFuncSpecs glb
-    let constructorTainted, constrInfo, funcInfos = FuncInfo.getFuncInfos glb constrFunc normalFuncs 
+    let implicitConstraints = ImplicitConstraint.getImplicitConstraints normalFuncs mainFuncs glb.gvars
+    let constructorTainted, constrInfo, funcInfos = FuncInfo.getFuncInfos glb constrFunc normalFuncs mainFuncs implicitConstraints
     let normalFuncs = List.map (fun info -> info.FuncSpec) funcInfos
     let contractSpec = ContractSpec.make constrFunc (Array.ofList normalFuncs)
     let folder accMap info = Map.add (FuncSpec.getName info.FuncSpec) info accMap
-    let funcInfoMap = List.fold folder Map.empty funcInfos
+    funcInfoMap <- List.fold folder Map.empty funcInfos
     let initWorks = initializeWorkList funcInfos
     let funcs = List.map (fun fInfo -> FuncSpec.getName fInfo.FuncSpec) funcInfos
 
@@ -136,13 +155,20 @@ let run opt =
     let _ = List.map (fun info -> FuncInfo.print info) funcInfos
     // Now, decide transaction sequence order with the analysis result.
     printfn "\n====================== < Def - Use Chain > ======================\n"
-    let duchains = enumerateDUChains funcs funcInfoMap
+    let duchains = enumerateDUChains funcs
     printfn "(%d def-use chains)" (Set.count duchains)
     let _ = Set.iter (fun seq -> printfn "%A" seq) duchains
+    printfn "\n=============== < Implicit Def - Use Constraints > ===============\n"
+    let implicitChains = enumerateImplicitDUConstraints funcs
+    printfn "(%d implicit def-use constraints)" (Set.count implicitChains)
+    let _ = Set.iter (fun (f,g, ics) -> 
+        printfn "\n\"%s\" -> \"%s\"" f g
+        Array.iter (fun ic -> 
+        printfn "  MappingId: %A\n  DefKeys: %A\n  UseKeys: %A" ic.MappingId ic.DefKeys ic.UseKeys ) ics) implicitChains
     printfn "\n==================== < Candidate Sequences > ====================\n"
     let initWorksList = initWorks |> List.map (fun f -> [f])
-    let seqs = buildLoop funcInfoMap (Set.empty, []) initWorksList
+    let seqs = buildLoop (Set.empty, []) initWorksList
     printfn "(%d candidate sequences)" (List.length seqs)
     List.iter (fun seq -> printfn "%A" seq) seqs
     printfn "\n=================================================================\n"
-    (contractSpec, seqs)
+    (contractSpec, seqs, duchains, implicitChains)

@@ -74,3 +74,10 @@ module Arg =
     let mapper i elem =
       setCurElem (setCursor arg i) (Element.rewindByteCursor elem)
     Array.mapi mapper arg.Elems
+
+  let setNewAddressArgs (args: Arg array) (argIdx: int) (value: byte array) =
+    let elemIdx = args.[argIdx].ElemCursor
+    let curElem = args.[argIdx].Elems.[elemIdx]
+    let newElem = Element.updateBytesFrom curElem 0 value
+    let newElems = args.[argIdx].Elems |> Array.mapi (fun i elem -> if i = elemIdx then newElem else elem)
+    args |> Array.mapi (fun i arg -> if i = argIdx then { arg with Elems = newElems } else arg)

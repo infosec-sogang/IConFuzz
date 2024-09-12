@@ -25,16 +25,16 @@ let private sequenceToSeed contSpec seq =
 
 let private initializeWithoutDFA opt =
   let contSpec = ABI.parse opt.ABIPath
-  (contSpec, makeSingletonSeeds contSpec)
+  (contSpec, makeSingletonSeeds contSpec, Set.empty, Set.empty)
 
 let private initializeWithDFA (opt: FuzzOption) =
   let prog = program_file
   let outdir, mainContract, solv, cfg = opt.OutDir, opt.MainContract, "0.4.18", false
   let opt' = { Input = prog; OutDir = outdir; Solv = solv; Main = mainContract; Cfg = cfg }
-  let contSpec, seqs = TopLevel.run opt'
+  let contSpec, seqs, duchains, implicitChains = TopLevel.run opt'
   if List.isEmpty seqs // No DU chain at all.
-  then (contSpec, makeSingletonSeeds contSpec)
-  else (contSpec, List.map (sequenceToSeed contSpec) seqs)
+  then (contSpec, makeSingletonSeeds contSpec, duchains, implicitChains)
+  else (contSpec, List.map (sequenceToSeed contSpec) seqs, duchains, implicitChains)
 
 
 /// Allocate testing resource for each strategy (grey-box concolic testing and
@@ -92,32 +92,32 @@ let private repeatGreyConcolic opt concQ randQ concolicBudget =
   GreyConcolic.updateStatus concolicExecNum concolicNewTCNum
   (concQ, randQ)
 
-let rec private randFuzzLoop opt contSpec concQ randQ =
+let rec private randFuzzLoop opt contSpec duchains implicitChains concQ randQ =
   // Random fuzzing seeds are involatile, so don't have to check emptiness.
   if Executor.isExhausted () then (concQ, randQ)
   else let seed, randQ = RandFuzzQueue.fetch randQ
        if opt.Verbosity >= 3 then
          log "Random fuzzing on seed : %s" (Seed.toString seed)
-       let newSeeds = RandomFuzz.run seed opt contSpec
+       let newSeeds = RandomFuzz.run seed opt contSpec duchains implicitChains
        let rewindedSeeds = rewindCursors newSeeds
        let concQ = List.fold ConcolicQueue.enqueue concQ rewindedSeeds
        let randQ = List.fold RandFuzzQueue.enqueue randQ newSeeds
        if opt.Verbosity >= 4 then printNewSeeds rewindedSeeds
-       randFuzzLoop opt contSpec concQ randQ
+       randFuzzLoop opt contSpec duchains implicitChains concQ randQ
 
-let private repeatRandFuzz opt contSpec concQ randQ randFuzzBudget =
+let private repeatRandFuzz opt contSpec duchains implicitChains concQ randQ randFuzzBudget =
   if opt.Verbosity >= 2 then log "Random fuzzing phase starts"
   Executor.allocateResource randFuzzBudget
   Executor.resetPhaseExecutions ()
   let tcNumBefore = TCManage.getTestCaseCount ()
-  let concQ, randQ = randFuzzLoop opt contSpec concQ randQ
+  let concQ, randQ = randFuzzLoop opt contSpec duchains implicitChains concQ randQ
   let tcNumAfter = TCManage.getTestCaseCount ()
   let randExecNum = Executor.getPhaseExecutions ()
   let randNewTCNum = tcNumAfter - tcNumBefore
   RandomFuzz.updateStatus randExecNum randNewTCNum
   (concQ, randQ)
 
-let rec private fuzzLoop opt contSpec concQ randQ =
+let rec private fuzzLoop opt contSpec duchains implicitChains concQ randQ =
   let concolicBudget, randFuzzBudget = allocResource ()
   let concQSize = ConcolicQueue.size concQ
   let randQSize = RandFuzzQueue.size randQ
@@ -127,8 +127,8 @@ let rec private fuzzLoop opt contSpec concQ randQ =
   // Perform grey-box concolic testing
   let concQ, randQ = repeatGreyConcolic opt concQ randQ concolicBudget
   // Perform random fuzzing
-  let concQ, randQ = repeatRandFuzz opt contSpec concQ randQ randFuzzBudget
-  fuzzLoop opt contSpec concQ randQ
+  let concQ, randQ = repeatRandFuzz opt contSpec duchains implicitChains concQ randQ randFuzzBudget
+  fuzzLoop opt contSpec duchains implicitChains concQ randQ
 
 let private fuzzingTimer opt = async {
   let timespan = System.TimeSpan (0, 0, 0, opt.Timelimit)
@@ -167,9 +167,9 @@ let run args =
   Executor.initialize opt.ProgPath
 
   // let contSpec, initSeeds = initializeWithoutDFA opt
-  let contSpec, initSeeds = if opt.DynamicDFA then initializeWithDFA opt
-                            else initializeWithoutDFA opt
+  let contSpec, initSeeds, duchains, implicitChains =   if opt.DynamicDFA then initializeWithDFA opt
+                                                        else initializeWithoutDFA opt
   let concQ = List.fold ConcolicQueue.enqueue ConcolicQueue.empty initSeeds
   let randQ = List.fold RandFuzzQueue.enqueue (RandFuzzQueue.init ()) initSeeds
   log "Start main fuzzing phase"
-  fuzzLoop opt contSpec concQ randQ
+  fuzzLoop opt contSpec duchains implicitChains concQ randQ

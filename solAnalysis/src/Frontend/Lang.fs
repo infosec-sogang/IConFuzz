@@ -478,6 +478,10 @@ let is_contract_kind cont =
     let (_,_,_,_,_,cinfo) = cont
     cinfo.ckind = "contract"
 
+let get_stmts func =
+    let (_,_,_,stmt,_) = func
+    stmt
+
 let get_finfo func =
     let (_,_,_,_,finfo) = func
     finfo
