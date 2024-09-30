@@ -296,6 +296,19 @@ module GreySolver =
           ) [seed] byteConds
       newSeeds
 
+  // When x < N is given, generate seeds with x = N - 1 and x = N + 1, too.
+  let solveIneqAsEquation seed dir ineq =
+    match ineq.TightInequality with
+    | None -> []
+    | Some linEq ->
+      let sols = linEq.Solutions
+      let size = linEq.ChunkSize
+      let endian = linEq.Endian
+      let mapper sol =
+        [ Seed.fixCurBytes seed dir (bigIntToBytes endian size (sol - 1I));
+          Seed.fixCurBytes seed dir (bigIntToBytes endian size (sol + 1I)) ]
+      List.collect mapper sols
+
   let solveInequality seed opt dir pc distSign branchPoint ineq =
     if Config.Debug then
       log "Solving @ 0x%x(#%d)" branchPoint.Addr branchPoint.Idx
@@ -304,8 +317,11 @@ module GreySolver =
     if Config.Debug then
       log "extractCond() (1) = condP : %A, condN : %A" condP condN
     let accPc, flipCond = updateConditions pc distSign condP condN
-    let seeds = encodeCondition seed opt dir flipCond
-    (accPc, seeds)
+    let seeds1 = encodeCondition seed opt dir flipCond
+    let seeds2 = solveIneqAsEquation seed dir ineq
+    if Config.Debug then
+      log "Generated %d additional seeds from inequality" (List.length seeds2)
+    (accPc, seeds1 @ seeds2)
 
   let solveBranchCond seed opt dir (pc: Constraint) branch =
     let branchCond, distSign = branch
