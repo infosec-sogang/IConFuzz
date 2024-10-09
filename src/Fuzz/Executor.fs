@@ -1,6 +1,7 @@
 module Smartian.Executor
 
 open System.IO
+open System.Numerics
 open System.Collections.Generic
 open Nethermind.Dirichlet.Numerics
 open Nethermind.Core.Test.Builders
@@ -14,6 +15,38 @@ open Config
 open BytesUtils
 open Options
 
+type BugType =
+  | AssertionFailure of BugClass * int
+  | ArbitraryWrite of BugClass * int
+  | BlockstateDependency of BugClass * int
+  | BlockstateDependencySFuzz of BugClass * int
+  | BlockstateDependencyILF of BugClass * int
+  | BlockstateDependencyMythril of BugClass * int
+  | BlockstateDependencyManticore of BugClass * int
+  | ControlHijack of BugClass * int
+  | EtherLeak of BugClass * string * int
+  | EtherLeakStrict of BugClass * string * int
+  | IntegerBug of BugClass * int
+  | IntegerBugSFuzz of BugClass * int
+  | IntegerBugMythril of BugClass * int
+  | IntegerBugManticore of BugClass * int
+  | MishandledException of BugClass * int
+  | MishandledExceptionSFuzz of BugClass * int
+  | MishandledExceptionILF of BugClass * int
+  | MishandledExceptionMythril of BugClass * int
+  | MishandledExceptionManticore of BugClass * int
+  | MultipleSend of BugClass * int
+  | Reentrancy of BugClass * int
+  | ReentrancySFuzz of BugClass * int
+  | ReentrancyILF of BugClass * int
+  | ReentrancyMythril of BugClass * int
+  | ReentrancyManticore of BugClass * int
+  | SuicidalContract of BugClass * string * int
+  | SuicidalContractStrict of BugClass * string * int
+  | TransactionOriginUse of BugClass * int
+  | FreezingEther of BugClass * int
+  | RequirementViolation of BugClass * int
+
 type Env = {
   State : StateProvider
   SpecProvider: MainNetSpecProvider
@@ -26,8 +59,8 @@ type Feedback = {
   DUGain : bool
   // PC, Op, Oprnd1, Oprnd2.
   CmpList : (uint64 * string * bigint * bigint) list
-  // Bug class, Bug PC, Buggy function, Index of buggy TX.
-  BugSet : Set<(BugClass * int * string * int)>
+  // BugType * index of buggy TX.
+  BugSet : Set<(BugType * int)>
 }
 
 // Set of edge hashes.
@@ -143,6 +176,65 @@ let private setupTarget env initEther deployer addr tx =
   vm.TargetContractAddr <- addr
   vm.TargetOwnerAddr <- deployer
 
+let toBugType bugClass fname pc =
+  match bugClass with
+  | BugClass.AssertionFailure -> BugType.AssertionFailure (bugClass, pc)
+  | BugClass.ArbitraryWrite -> BugType.ArbitraryWrite (bugClass, pc)
+  | BugClass.BlockstateDependency -> BugType.BlockstateDependency (bugClass, pc)
+  | BugClass.BlockstateDependencySFuzz -> BugType.BlockstateDependencySFuzz (bugClass, pc)
+  | BugClass.BlockstateDependencyILF -> BugType.BlockstateDependencyILF (bugClass, pc)
+  | BugClass.BlockstateDependencyMythril -> BugType.BlockstateDependencyMythril (bugClass, pc)
+  | BugClass.BlockstateDependencyManticore -> BugType.BlockstateDependencyManticore (bugClass, pc)
+  | BugClass.ControlHijack -> BugType.ControlHijack (bugClass, pc)
+  | BugClass.EtherLeak -> BugType.EtherLeak (bugClass, fname, pc)
+  | BugClass.EtherLeakStrict -> BugType.EtherLeakStrict (bugClass, fname, pc)
+  | BugClass.IntegerBug -> BugType.IntegerBug (bugClass, pc)
+  | BugClass.IntegerBugSFuzz -> BugType.IntegerBugSFuzz (bugClass, pc)
+  | BugClass.IntegerBugMythril -> BugType.IntegerBugMythril (bugClass, pc)
+  | BugClass.IntegerBugManticore -> BugType.IntegerBugManticore (bugClass, pc)
+  | BugClass.MishandledException -> BugType.MishandledException (bugClass, pc)
+  | BugClass.MishandledExceptionSFuzz -> BugType.MishandledExceptionSFuzz (bugClass, pc)
+  | BugClass.MishandledExceptionILF -> BugType.MishandledExceptionILF (bugClass, pc)
+  | BugClass.MishandledExceptionMythril -> BugType.MishandledExceptionMythril (bugClass, pc)
+  | BugClass.MishandledExceptionManticore -> BugType.MishandledExceptionManticore (bugClass, pc)
+  | BugClass.MultipleSend -> BugType.MultipleSend (bugClass, pc)
+  | BugClass.Reentrancy -> BugType.Reentrancy (bugClass, pc)
+  | BugClass.ReentrancySFuzz -> BugType.ReentrancySFuzz (bugClass, pc)
+  | BugClass.ReentrancyILF ->BugType. ReentrancyILF (bugClass, pc)
+  | BugClass.ReentrancyMythril -> BugType.ReentrancyMythril (bugClass, pc)
+  | BugClass.ReentrancyManticore -> BugType.ReentrancyManticore (bugClass, pc)
+  | BugClass.SuicidalContract -> BugType.SuicidalContract (bugClass, fname, pc)
+  | BugClass.SuicidalContractStrict -> BugType.SuicidalContractStrict (bugClass, fname, pc)
+  | BugClass.TransactionOriginUse -> BugType.TransactionOriginUse (bugClass, pc)
+  | BugClass.FreezingEther -> BugType.FreezingEther (bugClass, pc)
+  | BugClass.RequirementViolation -> BugType.RequirementViolation (bugClass, pc)
+
+let classOfBug bug = 
+  match bug with
+  | BugType.AssertionFailure (bugclass, pc) | BugType.ArbitraryWrite (bugclass, pc) | BugType.BlockstateDependency (bugclass, pc)
+  | BugType.BlockstateDependencySFuzz (bugclass, pc) | BugType.BlockstateDependencyILF (bugclass, pc) | BugType.BlockstateDependencyMythril (bugclass, pc)
+  | BugType.BlockstateDependencyManticore (bugclass, pc) | BugType.ControlHijack (bugclass, pc) | BugType.EtherLeak (bugclass, _, pc)
+  | BugType.EtherLeakStrict (bugclass, _, pc) | BugType.IntegerBug (bugclass, pc) | BugType.IntegerBugSFuzz (bugclass, pc)
+  | BugType.IntegerBugMythril (bugclass, pc) | BugType.IntegerBugManticore (bugclass, pc) | BugType.MishandledException (bugclass, pc)
+  | BugType.MishandledExceptionSFuzz (bugclass, pc) | BugType.MishandledExceptionILF (bugclass, pc) | BugType.MishandledExceptionMythril (bugclass, pc)
+  | BugType.MishandledExceptionManticore (bugclass, pc) | BugType.MultipleSend (bugclass, pc) | BugType.Reentrancy (bugclass, pc)
+  | BugType.ReentrancySFuzz (bugclass, pc) | BugType.ReentrancyILF (bugclass, pc) | BugType.ReentrancyMythril (bugclass, pc)
+  | BugType.ReentrancyManticore (bugclass, pc) | BugType.SuicidalContract (bugclass, _, pc) | BugType.SuicidalContractStrict (bugclass, _, pc)
+  | BugType.TransactionOriginUse (bugclass, pc) | BugType.FreezingEther (bugclass, pc) | BugType.RequirementViolation (bugclass, pc) -> bugclass
+
+let pcOfBug bug =
+  match bug with
+  | BugType.AssertionFailure (bugclass, pc) | BugType.ArbitraryWrite (bugclass, pc) | BugType.BlockstateDependency (bugclass, pc)
+  | BugType.BlockstateDependencySFuzz (bugclass, pc) | BugType.BlockstateDependencyILF (bugclass, pc) | BugType.BlockstateDependencyMythril (bugclass, pc)
+  | BugType.BlockstateDependencyManticore (bugclass, pc) | BugType.ControlHijack (bugclass, pc) | BugType.EtherLeak (bugclass, _, pc)
+  | BugType.EtherLeakStrict (bugclass, _, pc) | BugType.IntegerBug (bugclass, pc) | BugType.IntegerBugSFuzz (bugclass, pc)
+  | BugType.IntegerBugMythril (bugclass, pc) | BugType.IntegerBugManticore (bugclass, pc) | BugType.MishandledException (bugclass, pc)
+  | BugType.MishandledExceptionSFuzz (bugclass, pc) | BugType.MishandledExceptionILF (bugclass, pc) | BugType.MishandledExceptionMythril (bugclass, pc)
+  | BugType.MishandledExceptionManticore (bugclass, pc) | BugType.MultipleSend (bugclass, pc) | BugType.Reentrancy (bugclass, pc)
+  | BugType.ReentrancySFuzz (bugclass, pc) | BugType.ReentrancyILF (bugclass, pc) | BugType.ReentrancyMythril (bugclass, pc)
+  | BugType.ReentrancyManticore (bugclass, pc) | BugType.SuicidalContract (bugclass, _, pc) | BugType.SuicidalContractStrict (bugclass, _, pc)
+  | BugType.TransactionOriginUse (bugclass, pc) | BugType.FreezingEther (bugclass, pc) | BugType.RequirementViolation (bugclass, pc) -> pc
+
 let private sendTx env isAcc hadDepTx isRedirect tx =
   let vm = env.VM
   vm.ResetPerTx()
@@ -156,20 +248,33 @@ let private sendTx env isAcc hadDepTx isRedirect tx =
     accumRuntimeInstrs.UnionWith(vm.VisitedRuntimeInstrs)
     accumDUChains.UnionWith(vm.DefUseChainSet)
     accumBugs <- Set.ofSeq vm.BugSet
-                 |> Set.map (fun struct (bugClass, pc) -> bugClass, pc)
+                 |> Set.map (fun struct (bugClass, pc) -> toBugType bugClass tx.Function pc)
                  |> Set.union accumBugs
 
-// Check ether gain of users only if there was no previous deployer TX, because
-// such TX can transfer the ownership to other users. Also, we check against
-// both the initial balance and the (immediate) previous balance to make sure
-// that an attacker is actively, not passively, gaining ether.
-let private checkEtherLeak env isAcc sender hadDepTx initBal prevBal accBugs =
-  let bug = (BugClass.EtherLeak, env.VM.BugOracle.LastEtherSendPC)
-  if not isAcc || Set.contains bug accumBugs || hadDepTx then accBugs
-  elif env.State.GetBalance(sender) <= initBal then accBugs
-  elif env.State.GetBalance(sender) <= prevBal then accBugs
-  else accumBugs <- Set.add bug accumBugs
-       Set.add bug accBugs
+// Check if a non-deployer user obtains ether by sending this TX. We check the
+// new balance against both the initial balance and balance before this TX. This
+// is to make sure that the user is actively (not passively) gaining ether.
+
+let private checkEtherLeak env isAcc sender isDepTx hadDepTx initBal prevBal userPrevBals tx =
+  let updatedBal = env.State.GetBalance(sender)
+  let senderEtherGained = updatedBal > initBal && updatedBal > prevBal
+  let otherEtherGained = List.exists (
+    fun addr ->
+      let updatedBal = env.State.GetBalance(addr)
+      let prevBal = Map.find (Address.toStr addr) userPrevBals
+      updatedBal > initBal && updatedBal > prevBal) Address.USER_CONTRACTS
+  let bugPC = env.VM.BugOracle.LastEtherSendPC
+  // If there was any previous TX from the deployer, the contract ownership
+  // could have been transferred legitimately. Therefore, we report an EL bug
+  // with less confidence in such cases.
+  // If an untrusted user other than the sender (not the owner) gets the ether,
+  // then we report an EL bug with less confidence.
+  if isAcc && not isDepTx then
+    if senderEtherGained then
+      if hadDepTx then accumBugs <- Set.add (toBugType BugClass.EtherLeak tx.Function bugPC) accumBugs
+      else accumBugs <- Set.add (toBugType BugClass.EtherLeakStrict tx.Function bugPC) accumBugs
+    elif otherEtherGained then
+      if isAcc && not isDepTx then accumBugs <- Set.add (toBugType BugClass.EtherLeak tx.Function bugPC) accumBugs
 
 let private processTx env tc isAcc (accNewBugs, hadDepTx) i tx =
   // Since we removed the foremost deploying transaction, sould +1 to the index.
@@ -183,17 +288,19 @@ let private processTx env tc isAcc (accNewBugs, hadDepTx) i tx =
     | None -> failwithf "Invalid sender: %s" (Address.toStr sender)
   let prevBal = env.State.GetBalance(sender)
   let prevBugs = accumBugs
+  let userPrevBals = List.fold (fun acc user -> Map.add (Address.toStr user) (env.State.GetBalance(user)) acc) Map.empty Address.USER_CONTRACTS
   sendTx env isAcc hadDepTx isRedirect tx
+  checkEtherLeak env isAcc sender isDepTx hadDepTx initBal prevBal userPrevBals tx
   let accNewBugs = Set.difference accumBugs prevBugs
-                   |> checkEtherLeak env isAcc sender hadDepTx initBal prevBal
-                   |> Set.map (fun (bug, pc) -> (bug, pc, tx.Function, i))
-                   |> Set.union accNewBugs
+                |> Set.map (fun bug -> (bug, i))
+                |> Set.union accNewBugs
   (accNewBugs, hadDepTx)
 
 let private filterBugs checkOptional useOthersOracle bugs =
-  let shouldSkip (bug, pc, funcName, ith) =
-    if not checkOptional && BugClassHelper.isOptional bug then true
-    elif not useOthersOracle && BugClassHelper.isFromOtherTools bug then true
+  let shouldSkip (bug, ith) =
+    let bugtype = classOfBug bug
+    if not checkOptional && BugClassHelper.isOptional bugtype then true
+    elif not useOthersOracle && BugClassHelper.isFromOtherTools bugtype then true
     else false
   Set.filter (not << shouldSkip) bugs
 

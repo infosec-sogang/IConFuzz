@@ -24,20 +24,25 @@ let addTargetBug (bugType, siteStr) =
     match bugType with
     | BugClass.Reentrancy
     | BugClass.EtherLeak
-    | BugClass.SuicidalContract -> Function siteStr
+    | BugClass.EtherLeakStrict
+    | BugClass.SuicidalContract
+    | BugClass.SuicidalContractStrict -> Function siteStr
     | _ -> ProgramCounter (System.Convert.ToInt32(siteStr, 16))
   targetBugs <- Set.add (bugType, bugSite) targetBugs
 
 // Check if the found bug is one of our target bugs, and update the target bug
 // set if so. Depending on 'bugType', we must choose between 'pc' and 'func'.
-let removeTargetBug (bugType, pc, func, _) =
+let removeTargetBug (bug, _) =
+  let bugClass = classOfBug bug
+  let pc = pcOfBug bug
   let bugSite =
-    match bugType with
-    | BugClass.Reentrancy
-    | BugClass.EtherLeak
-    | BugClass.SuicidalContract -> Function func
+    match bug with
+    | BugType.EtherLeak (_, fname, _)
+    | BugType.EtherLeakStrict (_, fname, _)
+    | BugType.SuicidalContract (_, fname, _)
+    | BugType.SuicidalContractStrict (_, fname, _) -> Function fname
     | _ -> ProgramCounter pc
-  targetBugs <- Set.remove (bugType, bugSite) targetBugs
+  targetBugs <- Set.remove (bugClass, bugSite) targetBugs
 
 let initialize outDir targetBugs =
   tcDir <- System.IO.Path.Combine(outDir, "testcase")
@@ -56,11 +61,13 @@ let mutable private totalAW = 0
 let mutable private totalBD = 0
 let mutable private totalCH = 0
 let mutable private totalEL = 0
+let mutable private totalELStrict = 0
 let mutable private totalIB = 0
 let mutable private totalME = 0
 let mutable private totalMS = 0
 let mutable private totalRE = 0
 let mutable private totalSC = 0
+let mutable private totalSCStrict = 0
 let mutable private totalTO = 0
 let mutable private totalFE = 0
 let mutable private totalRV = 0
@@ -81,12 +88,12 @@ let printStatistics () =
   log "  Arbitrary Write: %d" totalAW
   log "  Block state Dependency: %d" totalBD
   log "  Control Hijack: %d" totalCH
-  log "  Ether Leak: %d" totalEL
+  log "  Ether Leak: %d (strict check: %d)" totalEL totalELStrict
   log "  Integer Bug: %d" totalIB
   log "  Mishandled Exception: %d" totalME
   log "  Multiple Send: %d" totalMS
   log "  Reentrancy: %d" totalRE
-  log "  Suicidal Contract: %d" totalSC
+  log "  Suicidal Contract: %d (strict check: %d)" totalSC totalSCStrict
   log "  Transaction Origin Use: %d" totalTO
   log "  Freezing Ether: %d" totalFE
   log "  Requirement Violation: %d" totalRV
@@ -96,18 +103,21 @@ let getTestCaseCount () =
 
 (*** Record of paths and bugs ***)
 
-let private updateBugCountAux (bugClass, _, _, _) =
+let private updateBugCountAux (bug, _) =
+  let bugClass = classOfBug bug
   match bugClass with
   | BugClass.AssertionFailure -> totalAF <- totalAF + 1
   | BugClass.ArbitraryWrite -> totalAW <- totalAW + 1
   | BugClass.BlockstateDependency -> totalBD <- totalBD + 1
   | BugClass.ControlHijack -> totalCH <- totalCH + 1
   | BugClass.EtherLeak -> totalEL <- totalEL + 1
+  | BugClass.EtherLeakStrict -> totalELStrict <- totalELStrict + 1
   | BugClass.IntegerBug -> totalIB <- totalIB + 1
   | BugClass.MishandledException -> totalME <- totalME + 1
   | BugClass.MultipleSend -> totalMS <- totalMS + 1
   | BugClass.Reentrancy -> totalRE <- totalRE + 1
   | BugClass.SuicidalContract -> totalSC <- totalSC + 1
+  | BugClass.SuicidalContractStrict -> totalSCStrict <- totalSCStrict + 1
   | BugClass.TransactionOriginUse -> totalTO <- totalTO + 1
   | BugClass.RequirementViolation -> totalRV <- totalRV + 1
   | _ -> ()
@@ -118,19 +128,30 @@ let private updateBugCount bugSet =
 (*** Test case storing functions ***)
 
 let printBugInfo bugSet =
-  let iterator (bugClass, pc, funcName, txIdx) =
+  let iterator (bug, txIdx) =
+    let bugClass = classOfBug bug
+    let pc = pcOfBug bug
     let bugStr = BugClassHelper.toString bugClass
     let funcStr =
-      match bugClass with
-      | BugClass.Reentrancy
-      | BugClass.EtherLeak
-      | BugClass.SuicidalContract -> sprintf " (%s)" funcName
+      match bug with
+      | BugType.EtherLeak (_, fname, _)
+      | BugType.EtherLeakStrict (_, fname, _)
+      | BugType.SuicidalContract (_, fname, _)
+      | BugType.SuicidalContractStrict (_, fname, _) ->
+        sprintf " (%s)" fname
       | _ -> ""
     log "Tx#%d found %s at %x%s" txIdx bugStr pc funcStr
+    // Print additional warning for bugs detected with loose bug oracle.
+    match bugClass with
+    | BugClass.EtherLeak
+    | BugClass.SuicidalContract ->
+      log "(Warning) The contract deployer made a TX before the bug occurs."
+      log "This can be an intended behavior of the contract (not a true bug)."
+    | _ -> ()
   Set.iter iterator bugSet
 
 let private decideBugTag bugSet =
-  Set.map (fun (bugType, _, _, _) -> bugType) bugSet
+  Set.map (fun (bug, _) -> classOfBug bug) bugSet
   |> Set.map BugClassHelper.toTag
   |> String.concat "-"
 
