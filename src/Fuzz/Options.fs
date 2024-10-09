@@ -34,8 +34,9 @@ with
         Currently we support (BD/IB/ME/RE) X (sFuzz/ILF/Mythril/MANTICORE)."
       | InitEther _ -> "Initialize the target contract to have initial ether"
       | TargetBug _ ->
-        "Target bugs to detect (pairs of bug type and instruction address\n\
-        Ex) -b \"IB:6cb/6cf,RE:4ae\""
+        "Target bugs to detect (pairs of bug type and location)\n\
+        Ex) -b \"IB:6cb/6cf,EL:transferTo\"\n\
+        Note that depending on bug type, location string format differs"
 
 type FuzzOption = {
   Verbosity         : int
@@ -48,7 +49,7 @@ type FuzzOption = {
   CheckOptionalBugs : bool
   UseOthersOracle   : bool
   InitEther         : uint64
-  TargetBugs        : (BugClass * int) array
+  TargetBugs        : (BugClass * string) array
 }
 
 let parseFuzzOption (args: string array) =
@@ -62,8 +63,7 @@ let parseFuzzOption (args: string array) =
     |> Array.collect (fun target ->
       let tokens = target.Split [|':'; '/'|]
       let bug = BugClassHelper.toBugClass tokens.[0]
-      tokens.[1..]
-      |> Array.map (fun addr -> (bug, System.Convert.ToInt32(addr, 16))))
+      Array.map (fun location -> (bug, location)) tokens.[1..])
   { Verbosity = r.GetResult (<@ Verbose @>, defaultValue = 1)
     OutDir = r.GetResult (<@ OutputDir @>)
     Timelimit = r.GetResult (<@ Timelimit @>)

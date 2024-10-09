@@ -10,16 +10,42 @@ open Utils
 let mutable tcDir = ""
 let mutable bugDir = ""
 
-(*** Target Bugs ***)
-let mutable TargetBugs = [||]
+(*** Types, variables, and functions for target bug specification ***)
 
-let initialize outDir targetBugList =
+type TargetSite = ProgramCounter of int | Function of string
+
+let mutable earlyTerminateFlag = false
+let mutable targetBugs = Set.empty
+
+// Register the bug as our target bug. Depending on 'bugType', we must interpret
+// the input string differently.
+let addTargetBug (bugType, siteStr) =
+  let bugSite =
+    match bugType with
+    | BugClass.Reentrancy
+    | BugClass.EtherLeak
+    | BugClass.SuicidalContract -> Function siteStr
+    | _ -> ProgramCounter (System.Convert.ToInt32(siteStr, 16))
+  targetBugs <- Set.add (bugType, bugSite) targetBugs
+
+// Check if the found bug is one of our target bugs, and update the target bug
+// set if so. Depending on 'bugType', we must choose between 'pc' and 'func'.
+let removeTargetBug (bugType, pc, func, _) =
+  let bugSite =
+    match bugType with
+    | BugClass.Reentrancy
+    | BugClass.EtherLeak
+    | BugClass.SuicidalContract -> Function func
+    | _ -> ProgramCounter pc
+  targetBugs <- Set.remove (bugType, bugSite) targetBugs
+
+let initialize outDir targetBugs =
   tcDir <- System.IO.Path.Combine(outDir, "testcase")
   System.IO.Directory.CreateDirectory(tcDir) |> ignore
   bugDir <- System.IO.Path.Combine(outDir, "bug")
   System.IO.Directory.CreateDirectory(bugDir) |> ignore
-  if Array.isEmpty targetBugList then TargetBugs <- [|(BugClass.IntegerBug, -1)|]
-  else TargetBugs <- targetBugList
+  if not (Array.isEmpty targetBugs) then earlyTerminateFlag <- true
+  Array.iter addTargetBug targetBugs
 
 (*** Statistics ***)
 
@@ -70,7 +96,7 @@ let getTestCaseCount () =
 
 (*** Record of paths and bugs ***)
 
-let private updateBugCountAux (bugClass, _, _) =
+let private updateBugCountAux (bugClass, _, _, _) =
   match bugClass with
   | BugClass.AssertionFailure -> totalAF <- totalAF + 1
   | BugClass.ArbitraryWrite -> totalAW <- totalAW + 1
@@ -92,12 +118,19 @@ let private updateBugCount bugSet =
 (*** Test case storing functions ***)
 
 let printBugInfo bugSet =
-  let iterator (bugClass, pc, txIdx) =
-    log "Tx#%d found %s at %x" txIdx (BugClassHelper.toString bugClass) pc
+  let iterator (bugClass, pc, funcName, txIdx) =
+    let bugStr = BugClassHelper.toString bugClass
+    let funcStr =
+      match bugClass with
+      | BugClass.Reentrancy
+      | BugClass.EtherLeak
+      | BugClass.SuicidalContract -> sprintf " (%s)" funcName
+      | _ -> ""
+    log "Tx#%d found %s at %x%s" txIdx bugStr pc funcStr
   Set.iter iterator bugSet
 
 let private decideBugTag bugSet =
-  Set.map (fun (bugType, _, _) -> bugType) bugSet
+  Set.map (fun (bugType, _, _, _) -> bugType) bugSet
   |> Set.map BugClassHelper.toTag
   |> String.concat "-"
 
@@ -112,10 +145,8 @@ let private dumpBug opt seed bugSet =
   if opt.Verbosity >= 0 then
     log "[*] Save bug seed %s: %s" tcName (Seed.toString seed)
   System.IO.File.WriteAllText(tcPath, tcStr)
-  let updateTargetBugs (bugClass, pc, _) =
-    TargetBugs <- Array.filter (fun x -> x <> (bugClass, pc)) TargetBugs
-  Set.iter updateTargetBugs bugSet
-  if Array.length TargetBugs = 0 then
+  Set.iter removeTargetBug bugSet
+  if earlyTerminateFlag && Set.isEmpty targetBugs then
     log "Found all target bugs at %d second (early termination)" (elapsedSec())
     log "===== Statistics ====="
     printStatistics ()

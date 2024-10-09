@@ -26,8 +26,8 @@ type Feedback = {
   DUGain : bool
   // PC, Op, Oprnd1, Oprnd2.
   CmpList : (uint64 * string * bigint * bigint) list
-  // Bug class, Bug PC, Triggerring TX index.
-  BugSet : Set<(BugClass * int * int)>
+  // Bug class, Bug PC, Buggy function, Index of buggy TX.
+  BugSet : Set<(BugClass * int * string * int)>
 }
 
 // Set of edge hashes.
@@ -186,12 +186,12 @@ let private processTx env tc isAcc (accNewBugs, hadDepTx) i tx =
   sendTx env isAcc hadDepTx isRedirect tx
   let accNewBugs = Set.difference accumBugs prevBugs
                    |> checkEtherLeak env isAcc sender hadDepTx initBal prevBal
-                   |> Set.map (fun (bug, pc) -> (bug, pc, i))
+                   |> Set.map (fun (bug, pc) -> (bug, pc, tx.Function, i))
                    |> Set.union accNewBugs
   (accNewBugs, hadDepTx)
 
 let private filterBugs checkOptional useOthersOracle bugs =
-  let shouldSkip (bug, pc, ith) =
+  let shouldSkip (bug, pc, funcName, ith) =
     if not checkOptional && BugClassHelper.isOptional bug then true
     elif not useOthersOracle && BugClassHelper.isFromOtherTools bug then true
     else false
