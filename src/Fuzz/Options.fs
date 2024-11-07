@@ -2,6 +2,7 @@ module Smartian.Options
 
 open Argu
 open Utils
+open System.Numerics
 open Nethermind.Evm
 
 type FuzzerCLI =
@@ -15,7 +16,7 @@ type FuzzerCLI =
   | [<Unique>] NoDDFA
   | [<Unique>] CheckOptionalBugs
   | [<Unique>] UseOthersOracle
-  | [<Unique>] InitEther of amount: uint64
+  | [<Unique>] InitEther of amount: BigInteger
 with
   interface IArgParserTemplate with
     member s.Usage =
@@ -48,7 +49,7 @@ type FuzzOption = {
   DynamicDFA        : bool
   CheckOptionalBugs : bool
   UseOthersOracle   : bool
-  InitEther         : uint64
+  InitEther         : BigInteger
   TargetBugs        : (BugClass * string) array
 }
 
@@ -73,5 +74,5 @@ let parseFuzzOption (args: string array) =
     DynamicDFA = not (r.Contains(<@ NoDDFA @>)) // Enabled by default.
     CheckOptionalBugs = r.Contains(<@ CheckOptionalBugs @>)
     UseOthersOracle = r.Contains(<@ UseOthersOracle @>)
-    InitEther = r.GetResult (<@ InitEther @>, defaultValue = 0UL)
+    InitEther = r.GetResult (<@ InitEther @>, defaultValue = 100000000000000000000I) // default: 100 ether
     TargetBugs = targetBugs }

@@ -3,6 +3,7 @@ module Smartian.Replay
 open Argu
 open Utils
 open Executor
+open System.Numerics
 
 type ReplayerCLI =
   | [<AltCommandLine("-p")>] [<Mandatory>] [<Unique>] Program of path: string
@@ -11,7 +12,7 @@ type ReplayerCLI =
   | [<Unique>] NoDDFA
   | [<Unique>] CheckOptionalBugs
   | [<Unique>] UseOthersOracle
-  | [<Unique>] InitEther of amount: uint64
+  | [<Unique>] InitEther of amount: BigInteger
 with
   interface IArgParserTemplate with
     member s.Usage =
@@ -34,7 +35,7 @@ type ReplayOption = {
   DynamicDFA        : bool
   CheckOptionalBugs : bool
   UseOthersOracle   : bool
-  InitEther         : uint64
+  InitEther         : BigInteger
 }
 
 let parseReplayOption args =
@@ -48,7 +49,7 @@ let parseReplayOption args =
     DynamicDFA = not (r.Contains(<@ NoDDFA @>)) // Enabled by default.
     CheckOptionalBugs = r.Contains(<@ CheckOptionalBugs @>)
     UseOthersOracle = r.Contains(<@ UseOthersOracle @>)
-    InitEther = r.GetResult (<@ InitEther @>, defaultValue = 0UL) }
+    InitEther = r.GetResult (<@ InitEther @>, defaultValue = 100000000000000000000I) } // default: 100 ether
 
 let extractElapsedTime (tcFile: string) =
   let name = System.IO.Path.GetFileName(tcFile)

@@ -135,7 +135,7 @@ let private setupTarget env initEther deployer addr tx =
   let blocknum = tx.Blocknum
   vm.IsDeployingTarget <- true
   deploy env deployer addr targCode value data timestamp blocknum
-  if initEther > 0UL then
+  if initEther > 0I && env.State.GetState(addr) <> null then
     let initEtherU256 = UInt256 initEther
     let spec = env.SpecProvider.GetSpec(blocknum)
     env.State.AddToBalance(addr, &initEtherU256, spec)
