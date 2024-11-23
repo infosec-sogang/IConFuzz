@@ -16,6 +16,8 @@ type FuncInfo = {
   Uses : Set<Variable>
   // Implicit constraints inferred from the function.
   ImplicitConstraints : ImplicitConstraint array
+  // Address constraint inferred from the function.
+  AddressConstraint: AddressConstraint
 }
 
 module FuncInfo =
@@ -26,7 +28,8 @@ module FuncInfo =
       ConstrTainted = constrTainted
       Defs = Set.empty
       Uses = Set.empty 
-      ImplicitConstraints = [||] }
+      ImplicitConstraints = [||] 
+      AddressConstraint = AddressConstraint.init }
 
   let print funcInfo =
     let name = FuncSpec.getName funcInfo.FuncSpec
@@ -86,7 +89,7 @@ module FuncInfo =
   let getConstrInfo constrFunc mainFuncs defuse constrTainted gvars =
     match Map.tryFind constrFunc.Name defuse with
     | None -> 
-      { FuncSpec = constrFunc; ConstrTainted = Set.empty; Defs = Set.empty; Uses = Set.empty; ImplicitConstraints = [||] }
+      { FuncSpec = constrFunc; ConstrTainted = Set.empty; Defs = Set.empty; Uses = Set.empty; ImplicitConstraints = [||]; AddressConstraint = AddressConstraint.init }
     | Some defuse ->
       let (defs, uses, use_assumes) = defuse 
       let defs = defs |> List.map snd |> Set.ofList
@@ -94,13 +97,12 @@ module FuncInfo =
       let stmt = mainFuncs |> List.find (fun f -> get_fname f = constrFunc.Name) |> get_stmts
       if (checkonlyOwner stmt constrTainted gvars) then
         let func = FuncSpec.updateOnlyOwner constrFunc
-        { FuncSpec = func; ConstrTainted = Set.empty; Defs = defs; Uses = uses; ImplicitConstraints = [||] }
+        { FuncSpec = func; ConstrTainted = Set.empty; Defs = defs; Uses = uses; ImplicitConstraints = [||]; AddressConstraint = AddressConstraint.init }
       else
-        { FuncSpec = constrFunc; ConstrTainted = Set.empty; Defs = defs; Uses = uses; ImplicitConstraints = [||] }
+        { FuncSpec = constrFunc; ConstrTainted = Set.empty; Defs = defs; Uses = uses; ImplicitConstraints = [||]; AddressConstraint = AddressConstraint.init }
 
-  let getFuncInfos glb constrFunc normalFuncs mainFuncs implicitConstraints =
+  let getFuncInfos glb constrTainted constrFunc normalFuncs mainFuncs implicitConstraints addressConstraints =
     let gvars = getGlobalVariables glb.gvars
-    let constrTainted = FuncSpec.AnalyzeConstructor glb gvars
     let gvarIdList = gvars |> List.map (fun (name, _) -> name)
     let defuse = glb.f_defuse |> Map.toList |> List.map (fun ((cname, fname, t), (defs, uses, use_assumes))->
         let defs = Set.filter (fun x -> List.contains x gvarIdList) defs |> Set.toList
@@ -130,10 +132,14 @@ module FuncInfo =
         match Array.tryFind (fun (fname, x) -> fname = func.Name) implicitConstraints with
         | Some (_, x) -> x
         | None -> [||]
+      let addressConstraint =
+        match Array.tryFind (fun (fname, x) -> fname = func.Name) addressConstraints with
+        | Some (_, x) -> x
+        | None -> AddressConstraint.init
       if (checkonlyOwner stmt constrTainted glb.gvars) then
         let func = FuncSpec.updateOnlyOwner func
-        { FuncSpec = func; ConstrTainted = constrTainted; Defs = defs; Uses = uses; ImplicitConstraints = implicitConstraints }
+        { FuncSpec = func; ConstrTainted = constrTainted; Defs = defs; Uses = uses; ImplicitConstraints = implicitConstraints; AddressConstraint = addressConstraint }
       else
-        { FuncSpec = func; ConstrTainted = constrTainted; Defs = defs; Uses = uses; ImplicitConstraints = implicitConstraints } )
+        { FuncSpec = func; ConstrTainted = constrTainted; Defs = defs; Uses = uses; ImplicitConstraints = implicitConstraints; AddressConstraint = addressConstraint })
     let constrInfo = getConstrInfo constrFunc mainFuncs defuse' constrTainted glb.gvars
-    (constrTainted, constrInfo, funcInfos)
+    (constrInfo, funcInfos)

@@ -40,6 +40,20 @@ let private enumerateImplicitDUConstraints funcs =
     ) acc funcs
   List.fold folder Set.empty funcs
 
+// Return the list of the function pairs and their constraints if they have any.
+let private enumerateAddressConstraints funcs =
+  let folder acc g =
+    List.fold (fun acc' f ->
+      let gInfo = Map.find g funcInfoMap
+      let fInfo = Map.find f funcInfoMap
+      let fAC, gAC = fInfo.AddressConstraint, gInfo.AddressConstraint
+      let interSect = 
+        let e = fAC.Defs |> Array.exists (fun (defsv, defarg) -> gAC.Uses |> Array.exists (fun (usesv, usearg, _) -> defsv = usesv))
+        if e then Some (fAC, gAC) else None
+      if Option.isNone interSect then acc' else Set.add (f, g, (Option.get interSect)) acc'
+    ) acc funcs
+  List.fold folder Set.empty funcs
+
 let private initializeWorkList funcInfos =
   let defs = List.filter (fun i -> not (Set.isEmpty i.Defs)) funcInfos
   let defOnlys, defAndUses = List.partition (fun i -> Set.isEmpty i.Uses) defs
@@ -139,8 +153,10 @@ let run opt =
     let (pgm, glb, lines)= preProcess opt 
     let mainFuncs = pgm |> Lang.get_main_contract |> Lang.get_funcs
     let constrFunc, normalFuncs = FuncSpec.getFuncSpecs glb
+    let constructorTainted = FuncSpec.AnalyzeConstructor glb (FuncInfo.getGlobalVariables glb.gvars)
     let implicitConstraints = ImplicitConstraint.getImplicitConstraints normalFuncs mainFuncs glb.gvars
-    let constructorTainted, constrInfo, funcInfos = FuncInfo.getFuncInfos glb constrFunc normalFuncs mainFuncs implicitConstraints
+    let addressConstraints = AddressConstraint.getAddressConstraints mainFuncs glb
+    let constrInfo, funcInfos = FuncInfo.getFuncInfos glb constructorTainted constrFunc normalFuncs mainFuncs implicitConstraints addressConstraints
     let normalFuncs = List.map (fun info -> info.FuncSpec) funcInfos
     let contractSpec = ContractSpec.make constrFunc (Array.ofList normalFuncs)
     let folder accMap info = Map.add (FuncSpec.getName info.FuncSpec) info accMap
@@ -161,14 +177,16 @@ let run opt =
     printfn "\n=============== < Implicit Def - Use Constraints > ===============\n"
     let implicitChains = enumerateImplicitDUConstraints funcs
     printfn "(%d implicit def-use constraints)" (Set.count implicitChains)
-    let _ = Set.iter (fun (f,g, ics) -> 
-        printfn "\n\"%s\" -> \"%s\"" f g
-        Array.iter (fun ic -> 
-        printfn "  MappingId: %A\n  DefKeys: %A\n  UseKeys: %A" ic.MappingId ic.DefKeys ic.UseKeys ) ics) implicitChains
+    let _ = Set.iter (fun (f, g, _) -> 
+        printfn "\n\"%s\" -> \"%s\"" f g) implicitChains
+    printfn "\n=============== < Address Def - Use Constraints > ===============\n"
+    let addressChains = enumerateAddressConstraints funcs
+    printfn "(%d address constraints)" (Set.count addressChains)
+    let _ = Set.iter (fun (f, g, _) -> printfn "\"%s\" -> \"%s\"" f g) addressChains
     printfn "\n==================== < Candidate Sequences > ====================\n"
     let initWorksList = initWorks |> List.map (fun f -> [f])
     let seqs = buildLoop (Set.empty, []) initWorksList
     printfn "(%d candidate sequences)" (List.length seqs)
     List.iter (fun seq -> printfn "%A" seq) seqs
     printfn "\n=================================================================\n"
-    (contractSpec, seqs, duchains, implicitChains)
+    (contractSpec, seqs, duchains, implicitChains, addressChains)

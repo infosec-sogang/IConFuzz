@@ -869,6 +869,20 @@ let is_skip stmt =
     | Skip -> true
     | _ -> false
 
+let rec is_skip_in_stmt stmt =
+    match stmt with
+    | Skip -> true
+    | Seq (s1, s2) -> is_skip_in_stmt s1 || is_skip_in_stmt s2
+    | While (_, s) -> is_skip_in_stmt s
+    | _ -> false
+
+let rec is_throw_in_stmt stmt =
+    match stmt with
+    | Throw -> true
+    | Seq (s1, s2) -> is_throw_in_stmt s1 || is_throw_in_stmt s2
+    | While (_ ,s) -> is_throw_in_stmt s
+    | _ -> false
+
 let get_params (_,par,_,_,_) = par
 let get_param_vars (_,par,_,_,_) = List.map (fun (v,vinfo)-> (v,vinfo.vtyp)) par
 let get_param_types (_,par,_,_,_) = List.map (fun p -> (snd p).vtyp) par
