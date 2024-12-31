@@ -136,10 +136,54 @@ let private mutateElem elem =
   | 4 -> tryInterestingElem elem
   | _ -> failwith "Invalid mutation code"
 
+let private mutateArrayLength seed arg =
+  let elems =
+    match arg.Spec.Kind with
+    // Do not support dimension >= 2 to mutate for now.
+    | Array (_, Array _) -> failwith "Unsupported array"
+    | Array (size, elemTyp) ->
+      match size with
+      | FixedSize _ -> arg.Elems
+      | UnfixedSize ->
+        let curSize = Array.length arg.Elems
+        let newSize = random.Next(1, 4)
+        match elemTyp with
+        | Address ->
+          Array.init newSize (
+            fun _ ->
+            let bytes = Address.pickInteresting() |> Address.toBytes LE
+            let byteVals = Array.map ByteVal.newByteVal bytes
+            { ElemType = Address
+              ByteVals = byteVals
+              MaxLength = 20
+              ByteCursor = 0 }
+          )
+        | _ -> Array.init newSize (fun _ -> Element.ZERO)
+    | _ -> failwith "Invalid array type"
+  let newArg = { arg with Elems = elems }
+  let newTx = Transaction.setCurArg (Seed.getCurTransaction seed) newArg
+  Seed.setCurTransaction seed newTx
+
 let private mutateTransactionArg seed =
+  let arg = Seed.getCurArg seed
   let curElem = Seed.getCurElem seed
   let newElem = mutateElem curElem
-  Seed.setCurElem seed newElem |> Seed.fixDeployTransaction
+  if seed.TXCursor = 0 then Seed.setCurElem seed newElem |> Seed.fixDeployTransaction
+  else
+    match curElem.ElemType with
+    | Array (_, elemTyp) ->
+      match elemTyp with
+      | Array _ ->
+        let newElem = mutateElem curElem
+        Seed.setCurElem seed newElem |> Seed.fixDeployTransaction
+      | _ ->
+        if random.Next(100) < 90 then
+          let newElem = mutateElem curElem
+          Seed.setCurElem seed newElem |> Seed.fixDeployTransaction
+        else mutateArrayLength seed arg
+    | _ ->
+      let newElem = mutateElem curElem
+      Seed.setCurElem seed newElem |> Seed.fixDeployTransaction
 
 let private mutateSeed contSpec seed =
   if not (Seed.isInputCursorValid seed) then
