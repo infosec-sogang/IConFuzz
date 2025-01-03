@@ -77,13 +77,10 @@ let rec private isSubSeq s1 s2 =
 let rec private pruneWorkList = function
   | [] -> []
   | headSeq :: tailSeqs ->
-    if List.exists (fun s -> isSubSeq headSeq s) tailSeqs then
-      printfn "Pruning out %A" headSeq
-      pruneWorkList tailSeqs // Drop headSeq.
+    if List.exists (fun s -> isSubSeq headSeq s) tailSeqs
+    then pruneWorkList tailSeqs // Drop headSeq.
     else
-      let filter tailSeq =
-        if isSubSeq tailSeq headSeq then printfn "Pruning out %A" tailSeq; false
-        else true
+      let filter tailSeq = not (isSubSeq tailSeq headSeq)
       headSeq :: pruneWorkList (List.filter filter tailSeqs)
 
 let rec private buildLoop funcInfoMap (accChains, accSeqs) works =
@@ -102,6 +99,21 @@ let parseABI abiFile =
   let constrFunc, normalFuncs = Parse.runWithoutBin abiFile
   ContractSpec.make constrFunc (Array.ofList normalFuncs)
 
+let printStats funcInfoMap seqs =
+  let funcs = Map.keys funcInfoMap
+  let duChains = enumerateDUChains funcs funcInfoMap
+  let numChains = Set.count duChains
+  let numSeeds = List.length seqs
+  let sumOfLen = List.fold (fun acc s -> acc + List.length s) 0 seqs
+  let avgLen = float sumOfLen / float numSeeds
+  printfn "================== < Def-Use Chain > =================="
+  let _ = Set.iter (fun chain -> printfn "%A" chain) duChains
+  printfn "==================  < Candidate Sequences > =================="
+  List.iter (fun seq -> printfn "%A" seq) seqs
+  printfn "Number of def-use chains: %d" numChains
+  printfn "Number of seeds: %d" numSeeds
+  printfn "Avg length of seeds: %.1f" avgLen
+
 let parseAndAnalyze binFile abiFile =
   // Parse and statically analyze bytecode.
   let preCFGs, postCFGs, constrFunc, normalFuncs = Parse.run binFile abiFile
@@ -114,14 +126,7 @@ let parseAndAnalyze binFile abiFile =
   // Now, decide transaction sequence order with the analysis result.
   let folder accMap info = Map.add (FuncSpec.getName info.FuncSpec) info accMap
   let funcInfoMap = List.fold folder Map.empty funcInfos
-  let funcs = List.map (fun fInfo -> FuncSpec.getName fInfo.FuncSpec) funcInfos
-  printfn "\n================== < Def - Use Chain > ==================\n"
-  let duchains = enumerateDUChains funcs funcInfoMap
-  printfn "(%d def-use chains)" (Set.count duchains)
-  let _ = Set.iter (fun seq -> printfn "%A" seq) duchains
-  printfn "\n==================  < Candidate Sequences > ==================\n"
   let initWorks = initializeWorkList funcInfos
   let seqs = buildLoop funcInfoMap (Set.empty, []) initWorks
-  printfn "(%d candidate sequences)" (List.length seqs)
-  List.iter (fun seq -> printfn "%A" seq) seqs
+  printStats funcInfoMap seqs
   (contractSpec, seqs)
