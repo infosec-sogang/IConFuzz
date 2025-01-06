@@ -31,12 +31,7 @@ let enumerateDUChains funcs funcInfoMap =
     ) acc funcs
   List.fold folder Set.empty funcs
 
-let private initializeWorkList funcInfos =
-  let defs = List.filter (fun i -> not (Set.isEmpty i.Defs)) funcInfos
-  let defOnlys, defAndUses = List.partition (fun i -> Set.isEmpty i.Uses) defs
-  (defOnlys @ defAndUses)
-  |> List.map (fun fInfo -> [FuncSpec.getName fInfo.FuncSpec])
-
+// Return the set of def-use chains found in the given sequence 'funcSeq'.
 let private evalDUChain funcInfoMap (funcSeq: Sequence): Set<DUChain> =
   let folder (accChains, accDefMap) f =
     let funcInfo = Map.find f funcInfoMap
@@ -53,47 +48,40 @@ let private evalDUChain funcInfoMap (funcSeq: Sequence): Set<DUChain> =
     (accChains, accDefMap)
   List.fold folder (Set.empty, Map.empty) funcSeq |> fst
 
-let private checkDUChainGain funcInfoMap chains seqs =
-  let folder (accChains, accPromising) seq =
-    let duChains = evalDUChain funcInfoMap seq
-    if Set.isEmpty (Set.difference duChains accChains)
-    then (accChains, accPromising)
-    else (Set.union accChains duChains, seq :: accPromising)
-  List.fold folder (chains, []) seqs
+// Extend 'seq' as much as possible as long as there is a gain in DU chain.
+let private extendSequence funcInfoMap accChains seq =
+  // Try a new sequence obtained by appending each function after 'seq'.
+  let rec appendLoop funcs accChains seq =
+    match funcs with
+    | [] -> None
+    | headFunc :: tailFuncs ->
+      let duChains = evalDUChain funcInfoMap (seq @ [headFunc])
+      if Set.isEmpty (Set.difference duChains accChains)
+      then appendLoop tailFuncs accChains seq
+      else Some (seq @ [headFunc])
+  // Run recursively until there is no more gain in accumulative DU chain set.
+  let rec extendLoop accChains s =
+    let allFuncs = Map.keys funcInfoMap
+    match appendLoop allFuncs accChains s with
+    | None -> (accChains, s)
+    | Some newSeq ->
+      let accChains = Set.union accChains (evalDUChain funcInfoMap newSeq)
+      extendLoop accChains newSeq
+  extendLoop accChains seq
 
-// Tests if s1 is a prefix of s2.
-let rec private isPrefix s1 s2 =
-  match s1, s2 with
-  | [], _ -> true
-  | _, [] -> false
-  | h1 :: t1, h2 :: t2 -> if h1 = h2 then isPrefix t1 t2 else false
+// Test if function 'f' is already included in one of 'seqs'.
+let isSubsumed f seqs =
+  List.exists (fun seq -> List.contains f seq) seqs
 
-// Tests if s1 is a sub-sequence of s2.
-let rec private isSubSeq s1 s2 =
-  match s2 with
-  | [] -> false
-  | _ :: t2 -> if isPrefix s1 s2 then true else isSubSeq s1 t2
-
-let rec private pruneWorkList = function
-  | [] -> []
-  | headSeq :: tailSeqs ->
-    if List.exists (fun s -> isSubSeq headSeq s) tailSeqs
-    then pruneWorkList tailSeqs // Drop headSeq.
-    else
-      let filter tailSeq = not (isSubSeq tailSeq headSeq)
-      headSeq :: pruneWorkList (List.filter filter tailSeqs)
-
-let rec private buildLoop funcInfoMap (accChains, accSeqs) works =
-  match works with
+let rec private buildLoop funcInfoMap (accChains, accSeqs) funcs =
+  match funcs with
   | [] -> accSeqs
-  | candidate :: tailWorks ->
-    let allFuncNames = Map.keys funcInfoMap
-    let appends = List.map (fun f -> candidate @ [f]) allFuncNames
-    let accChains, promisings = checkDUChainGain funcInfoMap accChains appends
-    let accSeqs = if not (List.isEmpty promisings) then accSeqs
-                  else candidate :: accSeqs // Add if no more room to improve.
-    let newWorks = pruneWorkList (promisings @ tailWorks)
-    buildLoop funcInfoMap (accChains, accSeqs) newWorks
+  | headFunc :: tailFuncs when isSubsumed headFunc accSeqs ->
+    buildLoop funcInfoMap (accChains, accSeqs) tailFuncs
+  | headFunc :: tailFuncs ->
+    let accChains, newSeq = extendSequence funcInfoMap accChains [headFunc]
+    let accSeqs = newSeq :: accSeqs
+    buildLoop funcInfoMap (accChains, accSeqs) tailFuncs
 
 let parseABI abiFile =
   let constrFunc, normalFuncs = Parse.runWithoutBin abiFile
@@ -126,7 +114,11 @@ let parseAndAnalyze binFile abiFile =
   // Now, decide transaction sequence order with the analysis result.
   let folder accMap info = Map.add (FuncSpec.getName info.FuncSpec) info accMap
   let funcInfoMap = List.fold folder Map.empty funcInfos
-  let initWorks = initializeWorkList funcInfos
-  let seqs = buildLoop funcInfoMap (Set.empty, []) initWorks
+  let defOnlys, defAndUses =
+    List.filter (fun i -> not (Set.isEmpty i.Defs)) funcInfos
+    |> List.partition (fun i -> Set.isEmpty i.Uses)
+  let startFuncs =
+    List.map (fun i -> FuncSpec.getName i.FuncSpec) (defOnlys @ defAndUses)
+  let seqs = buildLoop funcInfoMap (Set.empty, []) startFuncs
   printStats funcInfoMap seqs
   (contractSpec, seqs)
