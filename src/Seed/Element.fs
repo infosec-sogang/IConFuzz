@@ -23,7 +23,8 @@ module Element =
   let private decideLen = function
     | UInt width | Int width -> width
     | Address -> 20
-    | Bool | Byte -> 1
+    | Bool -> 32
+    | Byte -> 1
     | String -> STRING_ELEM_LEN
     | Array _ -> failwithf "Array type not allowed for an element"
 
