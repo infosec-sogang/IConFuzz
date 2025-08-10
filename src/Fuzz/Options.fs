@@ -13,6 +13,9 @@ type FuzzerCLI =
   | [<AltCommandLine("-b")>] [<Unique>] TargetBug of typeAndAddress: string
   | [<AltCommandLine("-m")>] [<Mandatory>] [<Unique>] MainContract of string
   | [<AltCommandLine("-s")>] [<Unique>] SolcVersion of string
+  | [<Unique>] NoMapKeyConstrs
+  | [<Unique>] NoPrivConstrs
+  | [<Unique>] NoConstrs
   | [<Unique>] NoDDFA
   | [<Unique>] CheckOptionalBugs
   | [<Unique>] UseOthersOracle
@@ -27,6 +30,9 @@ with
       | OutputDir _ -> "Directory to store testcase outputs."
       | MainContract _ -> "Name of the main contract of the target source file."
       | SolcVersion _ -> "Solc version specified by user."
+      | NoMapKeyConstrs -> "Disable mapping-key constraints during the fuzzing."
+      | NoPrivConstrs -> "Disable privilege constraints during the fuzzing."
+      | NoConstrs -> "Disable all constraints during the fuzzing."
       | NoDDFA -> "Disable dynamic data-flow analysis during the fuzzing."
       | CheckOptionalBugs ->
         "Detect optional bugs (e.g. requirement violation) disabled by default."
@@ -47,6 +53,9 @@ type FuzzOption = {
   ABIPath           : string
   MainContract      : string
   SolcVersion       : string
+  NoMapKeyConstrs   : bool
+  NoPrivConstrs     : bool
+  NoConstrs         : bool
   DynamicDFA        : bool
   CheckOptionalBugs : bool
   UseOthersOracle   : bool
@@ -73,6 +82,9 @@ let parseFuzzOption (args: string array) =
     ABIPath = ""
     MainContract = r.GetResult(<@ MainContract @>)
     SolcVersion = r.GetResult(<@ SolcVersion @>, defaultValue="")
+    NoMapKeyConstrs = r.Contains(<@ NoMapKeyConstrs @>)
+    NoPrivConstrs = r.Contains(<@ NoPrivConstrs @>)
+    NoConstrs = r.Contains(<@ NoConstrs @>)
     DynamicDFA = not (r.Contains(<@ NoDDFA @>)) // Enabled by default.
     CheckOptionalBugs = r.Contains(<@ CheckOptionalBugs @>)
     UseOthersOracle = r.Contains(<@ UseOthersOracle @>)

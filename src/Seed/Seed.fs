@@ -269,7 +269,7 @@ module Seed =
     let newTxs = Array.concat [headTxs; tailTxs]
     rewindTxCursor { seed with Transactions = newTxs }
 
-  let mutateTranasctionSenderAt seed idx =
+  let mutateTransactionSenderAt seed idx =
     // Note we can perform shallow copy here, since we don't change TX args.
     let newTxs = Array.copy seed.Transactions
     let tx = newTxs.[idx]

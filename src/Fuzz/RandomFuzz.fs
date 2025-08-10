@@ -5,15 +5,21 @@ open Utils
 open BytesUtils
 open solAnalysis
 open solAnalysis.TopLevel
+open Options
 
 let private MUTATE_MAX_POW = 7
 let private ARITH_MAX = 35
 let private DEPENDENCY_PRESERVATION_RATE = 90
-let private CONSTRAINTS_RATE = 50
+
 
 // Evaluate def - use chain
 let private dependencyPreservation =
   if random.Next(100) < DEPENDENCY_PRESERVATION_RATE then true else false
+
+let private constraintsRate (opt: FuzzOption) =
+  if opt.NoMapKeyConstrs then 0
+  elif opt.NoPrivConstrs then 100
+  else 50
 
 let private filterFuncsByMapKeyCons argName mapKeyChains =
   let defFuncs = mapKeyChains
@@ -279,7 +285,7 @@ let private mutateAddressWithOption seed defIdx useIdx defArg useArg opt =
   | true -> makeKeyAsSame seed defIdx useIdx defArgIdx useArgIdx
   | false -> makeKeyAsDifferent seed defIdx useIdx defArgIdx useArgIdx
 
-let private mutateAddress seed defTxIdx useTxIdx argName privChains =
+let private mutateAddressByPrivCons seed defTxIdx useTxIdx argName privChains =
   let txs = seed.Transactions
   let defTx, useTx = txs.[defTxIdx], txs.[useTxIdx]
   let chain = privChains |> Set.filter (fun (f, g, (defAC, useAC)) -> f = defTx.FuncSpec.Name && g = useTx.FuncSpec.Name) |> Set.toList
@@ -303,52 +309,55 @@ let private mutateAddresswithPrivCons seed func argName txIdx privChains =
   | 0, _ -> // No def transaction with address constraints.
     let selectedIdx = random.Next(useTxNum)
     let idx2, uses = useTxs.[selectedIdx]
-    mutateAddress seed txIdx idx2 argName privChains
+    mutateAddressByPrivCons seed txIdx idx2 argName privChains
   | _, 0 -> // Mutate the address of the def transaction.
     let selectedIdx = random.Next(defTxNum)
     let idx2, defs = defTxs.[selectedIdx]
-    mutateAddress seed idx2 txIdx argName privChains
+    mutateAddressByPrivCons seed idx2 txIdx argName privChains
   | _, _ -> // Mutate the address of either the def or use transaction.
     match random.Next(2) with
     | 0 -> 
       let selectedIdx = random.Next(useTxNum)
       let idx2, uses = useTxs.[selectedIdx]
-      mutateAddress seed txIdx idx2 argName privChains
+      mutateAddressByPrivCons seed txIdx idx2 argName privChains
     | 1 ->
       let selectedIdx = random.Next(defTxNum)
       let idx2, defs = defTxs.[selectedIdx]
-      mutateAddress seed idx2 txIdx argName privChains
+      mutateAddressByPrivCons seed idx2 txIdx argName privChains
     | _ -> failwith "Invalid mutation code"
 
-let mutateTransactionSender seed mapKeyChains privChains =
+let mutateTransactionSender opt seed mapKeyChains privChains =
   let txNum = Seed.getTransactionCount seed
   // Avoid mutating the sender of the deploying transaction.
   let mutIdx = random.Next(1, txNum)
   if mutIdx = 0 then Seed.mutateTransactionSenderAt seed mutIdx
   else
     let func = seed.Transactions.[mutIdx].FuncSpec.Name
-    let isMC = isMapKeyConstraints seed func "msg.sender" mutIdx mapKeyChains
-    let isPC = isPrivilegeConstraints seed func "msg.sender" mutIdx privChains
+    if opt.NoConstrs || (not dependencyPreservation) then
+      Seed.mutateTransactionSenderAt seed mutIdx // Disable constraints, mutate the sender directly.
+    else
+      let isMC = isMapKeyConstraints seed func "msg.sender" mutIdx mapKeyChains
+      let isPC = isPrivilegeConstraints seed func "msg.sender" mutIdx privChains
 
-    let mutateAddressWithMC chains =
-      if dependencyPreservation then (mutateAddresswithMapKeyCons seed func "msg.sender" mutIdx chains) |> Seed.fixDeployTransaction
-      else Seed.mutateTransactionSenderAt seed mutIdx
+      let mutateAddressWithMC chains =
+        (mutateAddresswithMapKeyCons seed func "msg.sender" mutIdx chains) |> Seed.fixDeployTransaction
 
-    let mutateAddressWithPC chains =
-      if dependencyPreservation then (mutateAddresswithPrivCons seed func "msg.sender" mutIdx chains) |> Seed.fixDeployTransaction
-      else Seed.mutateTransactionSenderAt seed mutIdx
+      let mutateAddressWithPC chains =
+        (mutateAddresswithPrivCons seed func "msg.sender" mutIdx chains) |> Seed.fixDeployTransaction
 
-    match (isMC, isPC) with
-    | (true, true) ->
-      // Check for mapping-key constraints
-      if random.Next(100) < CONSTRAINTS_RATE then mutateAddressWithMC mapKeyChains
-      else mutateAddressWithPC privChains
-    | (true, false) ->
-      mutateAddressWithMC mapKeyChains
-    | (false, true) ->
-      mutateAddressWithPC privChains
-    | (false, false) ->
-      Seed.mutateTransactionSenderAt seed mutIdx // No constraints, mutate the sender directly.
+      match (isMC, isPC) with
+      | (true, true) ->
+        // Check for mapping-key constraints
+        if random.Next(100) < constraintsRate opt then mutateAddressWithMC mapKeyChains
+        else mutateAddressWithPC privChains
+      | (true, false) ->
+        if not opt.NoMapKeyConstrs then mutateAddressWithMC mapKeyChains
+        else Seed.mutateTransactionSenderAt seed mutIdx
+      | (false, true) ->
+        if not opt.NoPrivConstrs then mutateAddressWithPC privChains
+        else Seed.mutateTransactionSenderAt seed mutIdx
+      | (false, false) ->
+        Seed.mutateTransactionSenderAt seed mutIdx // No constraints, mutate the sender directly.
 
 (*** Argument mutation. ***)
 
@@ -415,34 +424,36 @@ let private tryInterestingElem elem =
   let newByteVals = Array.map ByteVal.newByteVal newBytes
   { elem with ByteVals = newByteVals }
 
-let private mutateAddressTypeArg seed arg txIdx elem mapKeyChains privChains =
+let private mutateAddressTypeArg opt seed arg txIdx curelem mapKeyChains privChains =
   let func = (Seed.getCurTransaction seed).FuncSpec.Name
   let argName = arg.Spec.Name
-  let isMC = isMapKeyConstraints seed func argName txIdx mapKeyChains
-  let isPC = isPrivilegeConstraints seed func argName txIdx privChains
-
-  let mutateAddressWithMC chains =
-    if dependencyPreservation then (mutateAddresswithMapKeyCons seed func argName txIdx chains) |> Seed.fixDeployTransaction
-    else
-      let newElem = tryInterestingElem elem
-      Seed.setCurElem seed newElem |> Seed.fixDeployTransaction
-
-  let mutateAddressWithPC chains =
-    if dependencyPreservation then (mutateAddresswithPrivCons seed func argName txIdx chains) |> Seed.fixDeployTransaction
-    else Seed.mutateTransactionSenderAt seed txIdx
-
-  match (isMC, isPC) with
-  | (true, true) ->
-    if random.Next(100) < CONSTRAINTS_RATE then mutateAddressWithMC mapKeyChains
-    else mutateAddressWithPC privChains
-  | (true, false) ->
-    mutateAddressWithMC mapKeyChains
-  | (false, true) ->
-    mutateAddressWithPC privChains
-  | _ ->
+  let mutate elem =
     let newElem = tryInterestingElem elem
     Seed.setCurElem seed newElem |> Seed.fixDeployTransaction
-  
+
+  if opt.NoConstrs || (not dependencyPreservation) then mutate curelem
+  else
+    let isMC = isMapKeyConstraints seed func argName txIdx mapKeyChains
+    let isPC = isPrivilegeConstraints seed func argName txIdx privChains
+
+    let mutateAddressWithMC chains =
+      (mutateAddresswithMapKeyCons seed func argName txIdx chains) |> Seed.fixDeployTransaction
+
+    let mutateAddressWithPC chains =
+      (mutateAddresswithPrivCons seed func argName txIdx chains) |> Seed.fixDeployTransaction
+
+    match (isMC, isPC) with
+    | (true, true) ->
+      if random.Next(100) < constraintsRate opt then mutateAddressWithMC mapKeyChains
+      else mutateAddressWithPC privChains
+    | (true, false) ->
+      if opt.NoMapKeyConstrs then mutate curelem
+      else mutateAddressWithMC mapKeyChains
+    | (false, true) ->
+      if opt.NoPrivConstrs then mutate curelem
+      else mutateAddressWithPC privChains
+    | _ -> mutate curelem
+
 let private mutateElem elem =
   match random.Next(5) with
   // Type-unaware mutations.
@@ -482,7 +493,7 @@ let private mutateArrayLength seed arg =
   let newTx = Transaction.setCurArg (Seed.getCurTransaction seed) newArg
   Seed.setCurTransaction seed newTx
 
-let private mutateTransactionArg seed mapKeyChains privChains =
+let private mutateTransactionArg opt seed mapKeyChains privChains =
   let arg = Seed.getCurArg seed
   let curElem = Seed.getCurElem seed
   let newElem = mutateElem curElem
@@ -498,26 +509,26 @@ let private mutateTransactionArg seed mapKeyChains privChains =
       match elemTyp with
       | Array _ -> mutate curElem
       | Address -> 
+        // Mutate the address type argument or the array length (90% chance)
         if random.Next(100) < 90 then 
-          if dependencyPreservation then mutateAddressTypeArg seed arg txIdx curElem mapKeyChains privChains
-          else mutate curElem
+          mutateAddressTypeArg opt seed arg txIdx curElem mapKeyChains privChains
         else mutateArrayLength seed arg
       | _ -> 
         if random.Next(100) < 90 then mutate curElem
         else mutateArrayLength seed arg
-    | Address -> mutateAddressTypeArg seed arg txIdx curElem mapKeyChains privChains
+    | Address -> mutateAddressTypeArg opt seed arg txIdx curElem mapKeyChains privChains
     | _ ->
       let newElem = mutateElem curElem
       Seed.setCurElem seed newElem |> Seed.fixDeployTransaction
 
-let private mutateSeed contSpec duchains mapKeyChains privChains seed =
+let private mutateSeed opt contSpec duchains mapKeyChains privChains seed =
   if not (Seed.isInputCursorValid seed) then
     // If all the transactions in the seed have no argument.
     match random.Next(5) with
     | 0 -> insertTransaction contSpec seed
     | 1 -> shuffleTransaction duchains seed
     | 2 -> removeTransaction duchains seed
-    | 3 -> mutateTransactionSender seed mapKeyChains privChains
+    | 3 -> mutateTransactionSender opt seed mapKeyChains privChains
     | _ -> failwith "Invalid mutation code"
   else
     let seed = Seed.shuffleCursor seed
@@ -525,20 +536,20 @@ let private mutateSeed contSpec duchains mapKeyChains privChains seed =
     | 0 -> insertTransaction contSpec seed
     | 1 -> shuffleTransaction duchains seed
     | 2 -> removeTransaction duchains seed
-    | 3 -> mutateTransactionSender seed mapKeyChains privChains
-    | _ -> mutateTransactionArg seed mapKeyChains privChains
+    | 3 -> mutateTransactionSender opt seed mapKeyChains privChains
+    | _ -> mutateTransactionArg opt seed mapKeyChains privChains
 
-let rec private repRandMutateAux contSpec duchains mapKeyChains privChains seed depth depthLimit accumSeed =
+let rec private repRandMutateAux opt contSpec duchains mapKeyChains privChains seed depth depthLimit accumSeed =
   if depth >= depthLimit then accumSeed else
-    let accumSeed = mutateSeed contSpec duchains mapKeyChains privChains accumSeed
-    repRandMutateAux contSpec duchains mapKeyChains privChains seed (depth + 1) depthLimit accumSeed
+    let accumSeed = mutateSeed opt contSpec duchains mapKeyChains privChains accumSeed
+    repRandMutateAux opt contSpec duchains mapKeyChains privChains seed (depth + 1) depthLimit accumSeed
 
-let private repRandMutate contSpec duchains mapKeyChains privChains seed =
+let private repRandMutate opt contSpec duchains mapKeyChains privChains seed =
   let mutateN = 1 <<< (random.Next(MUTATE_MAX_POW))
-  repRandMutateAux contSpec duchains mapKeyChains privChains seed 0 mutateN seed
+  repRandMutateAux opt contSpec duchains mapKeyChains privChains seed 0 mutateN seed
   |> Seed.resetCursor
   |> Seed.resetBlockData
 
 let run seed opt contSpec duchains mapKeyChains privChains =
-  List.init Config.RAND_FUZZ_TRY_PER_SEED (fun _ -> repRandMutate contSpec duchains mapKeyChains privChains seed)
+  List.init Config.RAND_FUZZ_TRY_PER_SEED (fun _ -> repRandMutate opt contSpec duchains mapKeyChains privChains seed)
   |> List.filter (TCManage.evalAndSave opt)
