@@ -33,7 +33,11 @@ let addTargetBug (bugType, siteStr) =
 // Check if the found bug is one of our target bugs, and update the target bug
 // set if so. Depending on 'bugType', we must choose between 'pc' and 'func'.
 let removeTargetBug (bug, _) =
-  let bugClass = classOfBug bug
+  let bugClass = 
+    match classOfBug bug with
+    | BugClass.EtherLeakStrict -> BugClass.EtherLeak
+    | BugClass.SuicidalContractStrict -> BugClass.SuicidalContract
+    | _ -> classOfBug bug
   let pc = pcOfBug bug
   let bugSite =
     match bug with

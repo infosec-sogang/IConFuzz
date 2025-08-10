@@ -478,6 +478,10 @@ let is_contract_kind cont =
     let (_,_,_,_,_,cinfo) = cont
     cinfo.ckind = "contract"
 
+let get_stmts func =
+    let (_,_,_,stmt,_) = func
+    stmt
+
 let get_finfo func =
     let (_,_,_,_,finfo) = func
     finfo
@@ -863,6 +867,20 @@ let is_supported_mapping typ =
 let is_skip stmt =
     match stmt with
     | Skip -> true
+    | _ -> false
+
+let rec is_skip_in_stmt stmt =
+    match stmt with
+    | Skip -> true
+    | Seq (s1, s2) -> is_skip_in_stmt s1 || is_skip_in_stmt s2
+    | While (_, s) -> is_skip_in_stmt s
+    | _ -> false
+
+let rec is_throw_in_stmt stmt =
+    match stmt with
+    | Throw -> true
+    | Seq (s1, s2) -> is_throw_in_stmt s1 || is_throw_in_stmt s2
+    | While (_ ,s) -> is_throw_in_stmt s
     | _ -> false
 
 let get_params (_,par,_,_,_) = par

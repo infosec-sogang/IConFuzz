@@ -30,3 +30,14 @@ module Sender =
 
   let pick () =
     pickFromList [TargetOwner; NormalUser1; NormalUser2; NormalUser3]
+
+  let picktwo () =
+    let randompick () = random.Next(1, 4)
+    let addrs = Array.ofList [TargetOwner; NormalUser1; NormalUser2; NormalUser3]
+    let rec getindex () = 
+      let idx1 = randompick()
+      let idx2 = randompick()
+      if idx1 <> idx2 then (idx1, idx2) else getindex ()
+    let (idx1, idx2) = getindex ()
+    (addrs.[idx1], addrs.[idx2])
+     

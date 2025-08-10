@@ -838,7 +838,7 @@ let rec rename_lv enums lv =
   match lv with
   | Var (id,vinfo) ->
     if do_not_rename (id,vinfo) then lv
-    else Var (id + separator + (string vinfo.refid), vinfo)
+    else Var (id (*+ separator + (string vinfo.refid)*), vinfo)
   | MemberAccess (Lv (Var (x,xt)),id,id_info,typ)
     when is_enum typ && List.contains x (List.map fst enums) ->
     let assoc key lst =
@@ -853,7 +853,7 @@ let rec rename_lv enums lv =
   | MemberAccess (e,id,id_info,typ) ->
     let id' =
       if do_not_rename (id,id_info) then id
-      else id + separator + (string id_info.refid)
+      else id(* + separator + (string id_info.refid) *)
     MemberAccess (rename_e enums e, id', id_info, typ)
   | IndexAccess (e,None,_) -> raise (Failure "rename_lv enums1")
   | IndexAccess (e1,Some e2,typ) -> IndexAccess (rename_e enums e1, Some (rename_e enums e2), typ)
@@ -916,7 +916,7 @@ let rec rename_s cnames enums stmt =
   | Assume (e,loc) -> Assume (rename_e enums e, loc)
   | Assert (e,vtyp,loc) -> Assert (rename_e enums e, vtyp, loc)
   | Assembly (lst,loc) ->
-    Assembly (List.map (fun (x,refid) -> (x + separator + (string refid), refid)) lst, loc)
+    Assembly (List.map (fun (x,refid) -> (x (*+  separator + (string refid)*), refid)) lst, loc)
   | PlaceHolder -> PlaceHolder
   | Unchecked (slst,loc) ->
     let slst' = List.map (rename_s cnames enums) slst
@@ -924,18 +924,18 @@ let rec rename_s cnames enums stmt =
 
 let rename_param (id, vinfo) =
   if (string id).StartsWith Translator.param_name then (id,vinfo)
-  else (id + separator + (string vinfo.refid), vinfo)
+  else (id (*+ separator + (string vinfo.refid)*), vinfo)
 
 let rename_f cnames enums (fid, pars, ret_params, stmt, finfo) =
   (fid, List.map rename_param pars, List.map rename_param ret_params, rename_s cnames enums stmt, finfo)
 
 let rename_d decl =
   match decl with
-  | (id,None,vinfo) -> (id + separator + (string vinfo.refid), None, vinfo)
-  | (id,Some e,vinfo) -> (id + separator + (string vinfo.refid), Some e, vinfo)
+  | (id,None,vinfo) -> (id (*+ separator + (string vinfo.refid)*), None, vinfo)
+  | (id,Some e,vinfo) -> (id (*+ separator + (string vinfo.refid)*), Some e, vinfo)
 
 let rename_st (sname, members) =
-  let members' = List.map (fun (v,vinfo) -> (v + separator + (string vinfo.refid), vinfo)) members
+  let members' = List.map (fun (v,vinfo) -> (v (*+ separator + (string vinfo.refid)*), vinfo)) members
   (sname, members')
 
 let rename_c cnames (cid, decls, structs, enums, funcs, cinfo) =

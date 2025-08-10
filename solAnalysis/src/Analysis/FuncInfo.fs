@@ -14,6 +14,10 @@ type FuncInfo = {
   Defs : Set<Variable>
   // Variables used (i.e. SLOAD) by this function.
   Uses : Set<Variable>
+  // Mapping key constraints inferred from the function.
+  MapKeyConstrs : mapKeyConstraint array
+  // Privilege constraints inferred from the function.
+  PrivilegeConstrs : privilegeConstraint
 }
 
 module FuncInfo =
@@ -23,7 +27,9 @@ module FuncInfo =
     { FuncSpec = func
       ConstrTainted = constrTainted
       Defs = Set.empty
-      Uses = Set.empty }
+      Uses = Set.empty 
+      MapKeyConstrs = [||] 
+      PrivilegeConstrs = PrivilegeConstraint.init }
 
   let print funcInfo =
     let name = FuncSpec.getName funcInfo.FuncSpec
@@ -43,11 +49,28 @@ module FuncInfo =
       (name, newtyp))
     gvars'
 
-  let checkonlyOwner use_assumes constrTainted gvars =
-    let addrs = gvars |> List.filter (fun (id, typ) ->
-                match typ with
-                | EType t -> (match t with | Address -> true | _ -> false)
-                | _ -> false ) |> List.map (fun (name, _) -> name)
+  let getGlobalAddresses gvars = 
+    gvars |> List.filter (fun (id, typ) ->
+        match typ with
+        | EType t -> (match t with | Address -> true | _ -> false)
+        | _ -> false ) |> List.map (fun (name, _) -> name)
+
+  let rec checkStmt stmt taintedAddr =
+    match stmt with
+    | Seq (s1, s2) -> checkStmt s1 taintedAddr || checkStmt s2 taintedAddr
+    | If (e, s1, s2, _) ->
+      match e with 
+      | BinOp (Eq, Lv (MemberAccess(Lv (Var ("msg", _)), _, _, _)), Lv (Var (name, _)), _) ->
+        if taintedAddr |> Set.exists (fun x -> x = name) then true
+        else false
+      | BinOp (Eq, Lv (Var (name, _)), Lv (MemberAccess(Lv (Var ("msg", _)), _, _, _)), _) ->
+        if taintedAddr |> Set.exists (fun x -> x = name) then true
+        else false
+      | _ -> false
+    | _ -> false
+
+  let checkonlyOwner stmt constrTainted gvars =
+    let addrs = getGlobalAddresses gvars
     let taintedAddr = constrTainted 
                       |> Set.filter (fun addr -> List.exists (
                         fun s ->
@@ -61,29 +84,25 @@ module FuncInfo =
                           | Singleton (name, _) -> name
                           | ArrayVar (name, _, _) -> name
                           | MapVar (name, _, _) -> name)
+    if checkStmt stmt taintedAddr then true else false
 
-    if List.contains "msg.sender" use_assumes then
-      use_assumes |> List.exists (fun (x: string) -> 
-                    taintedAddr |> Set.exists (fun (s: string) -> s.Contains(x)))
-    else
-      false 
-      
-  let getConstrInfo constrFunc defuse constrTainted gvars =
+  let getConstrInfo constrFunc mainFuncs defuse constrTainted gvars =
     match Map.tryFind constrFunc.Name defuse with
-    | None ->  { FuncSpec = constrFunc; ConstrTainted = Set.empty; Defs = Set.empty; Uses = Set.empty}
+    | None -> 
+      { FuncSpec = constrFunc; ConstrTainted = Set.empty; Defs = Set.empty; Uses = Set.empty; MapKeyConstrs = [||]; PrivilegeConstrs = PrivilegeConstraint.init }
     | Some defuse ->
       let (defs, uses, use_assumes) = defuse 
       let defs = defs |> List.map snd |> Set.ofList
       let uses = uses |> List.map snd |> Set.ofList
-      if (checkonlyOwner use_assumes constrTainted gvars) then
+      let stmt = mainFuncs |> List.find (fun f -> get_fname f = constrFunc.Name) |> get_stmts
+      if (checkonlyOwner stmt constrTainted gvars) then
         let func = FuncSpec.updateOnlyOwner constrFunc
-        { FuncSpec = func; ConstrTainted = Set.empty; Defs = defs; Uses = uses}
+        { FuncSpec = func; ConstrTainted = Set.empty; Defs = defs; Uses = uses; MapKeyConstrs = [||]; PrivilegeConstrs = PrivilegeConstraint.init }
       else
-        { FuncSpec = constrFunc; ConstrTainted = Set.empty; Defs = defs; Uses = uses}
+        { FuncSpec = constrFunc; ConstrTainted = Set.empty; Defs = defs; Uses = uses; MapKeyConstrs = [||]; PrivilegeConstrs = PrivilegeConstraint.init }
 
-  let getFuncInfos glb constrFunc normalFuncs =
+  let getFuncInfos glb constrTainted constrFunc normalFuncs mainFuncs mapkeyconstrs privilegeconstrs =
     let gvars = getGlobalVariables glb.gvars
-    let constrTainted = FuncSpec.AnalyzeConstructor glb gvars
     let gvarIdList = gvars |> List.map (fun (name, _) -> name)
     let defuse = glb.f_defuse |> Map.toList |> List.map (fun ((cname, fname, t), (defs, uses, use_assumes))->
         let defs = Set.filter (fun x -> List.contains x gvarIdList) defs |> Set.toList
@@ -104,14 +123,23 @@ module FuncInfo =
                   ) Map.empty
 
     let funcInfos = normalFuncs |> List.map (fun func ->
-        let defuse = defuse' |> Map.find func.Name
-        let (defs, uses, use_assumes) = defuse 
-        let defs = defs |> List.map snd |> Set.ofList
-        let uses = uses |> List.map snd |> Set.ofList
-        if (checkonlyOwner use_assumes constrTainted glb.gvars) then
-          let func = FuncSpec.updateOnlyOwner func
-          { FuncSpec = func; ConstrTainted = constrTainted; Defs = defs; Uses = uses}
-        else
-          { FuncSpec = func; ConstrTainted = constrTainted; Defs = defs; Uses = uses})
-    let constrInfo = getConstrInfo constrFunc defuse' constrTainted glb.gvars
-    (constrTainted, constrInfo, funcInfos)
+      let defuse = defuse' |> Map.find func.Name
+      let (defs, uses, use_assumes) = defuse 
+      let defs = defs |> List.map snd |> Set.ofList
+      let uses = uses |> List.map snd |> Set.ofList
+      let stmt = mainFuncs |> List.find (fun f -> get_fname f = func.Name) |> get_stmts
+      let mapkeyconstrs = 
+        match Array.tryFind (fun (fname, x) -> fname = func.Name) mapkeyconstrs with
+        | Some (_, x) -> x
+        | None -> [||]
+      let privilegeconstrs =
+        match Array.tryFind (fun (fname, x) -> fname = func.Name) privilegeconstrs with
+        | Some (_, x) -> x
+        | None -> PrivilegeConstraint.init
+      if (checkonlyOwner stmt constrTainted glb.gvars) then
+        let func = FuncSpec.updateOnlyOwner func
+        { FuncSpec = func; ConstrTainted = constrTainted; Defs = defs; Uses = uses; MapKeyConstrs = mapkeyconstrs; PrivilegeConstrs = privilegeconstrs }
+      else
+        { FuncSpec = func; ConstrTainted = constrTainted; Defs = defs; Uses = uses; MapKeyConstrs = mapkeyconstrs; PrivilegeConstrs = privilegeconstrs })
+    let constrInfo = getConstrInfo constrFunc mainFuncs defuse' constrTainted glb.gvars
+    (constrInfo, funcInfos)
