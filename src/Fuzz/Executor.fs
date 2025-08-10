@@ -1,4 +1,4 @@
-module Smartian.Executor
+module IConFuzz.Executor
 
 open System.IO
 open System.Numerics

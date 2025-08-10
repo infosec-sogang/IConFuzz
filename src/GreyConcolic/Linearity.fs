@@ -1,4 +1,4 @@
-module Smartian.Linear
+module IConFuzz.Linear
 
 open Utils
 

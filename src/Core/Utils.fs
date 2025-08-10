@@ -1,7 +1,8 @@
 /// Miscellaneous utility functions.
-module Smartian.Utils
+module IConFuzz.Utils
 
 open System
+open System.Diagnostics
 open System.Collections.Immutable
 open System.Collections.Generic
 
@@ -132,3 +133,16 @@ let removeDir dir =
 let createDirectoryIfNotExists dir =
   if not (System.IO.Directory.Exists dir) then
     ignore (System.IO.Directory.CreateDirectory dir)
+
+let runProcess exePath args =
+    let startInfo = ProcessStartInfo(
+        FileName = exePath,
+        Arguments = args,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+        CreateNoWindow = true
+    )
+    let proc = new Process(StartInfo = startInfo)
+    proc.Start() |> ignore
+    proc

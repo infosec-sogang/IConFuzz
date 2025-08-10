@@ -1,4 +1,4 @@
-module Smartian.Address
+module IConFuzz.Address
 
 open Utils
 open BytesUtils

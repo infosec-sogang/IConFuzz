@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src\Util\RunProcess.fs" />
+    <Compile Include="src\Util\Options.fs" />
+    <Compile Include="src\Util\Vocab.fs" />
+    <Compile Include="src\Util\Solc.fs" />
+    <Compile Include="src\Util\Extensions.fs" />
+    <Compile Include="src\Frontend\Lang.fs" />
+    <Compile Include="src\pre\Path.fs" />
+    <Compile Include="src\pre\FuncMap.fs" />
+    <Compile Include="src\pre\StructMap.fs" />
+    <Compile Include="src\Frontend\Translator.fs" />
+    <Compile Include="src\pre\makeCfg.fs" />
+    <Compile Include="src\pre\callGraph.fs" />
+    <Compile Include="src\pre\interval\BTaint.fs" />
+    <Compile Include="src\pre\interval\GTaint.fs" />
+    <Compile Include="src\pre\interval\Itv.fs" />
+    <Compile Include="src\pre\interval\ItvDom.fs" />
+    <Compile Include="src\pre\FuncDefUse.fs" />
+    <Compile Include="src\pre\Global.fs" />
+    <Compile Include="src\Frontend\Preprocess.fs" />
+    <Compile Include="src\pre\Inline.fs" />
+    <Compile Include="src\Analysis\Typedef.fs" />
+    <Compile Include="src\Analysis\FuncSpec.fs" />
+    <Compile Include="src\Analysis\FuncInfo.fs" />
+    <Compile Include="src\Frontend\TopLevel.fs" />
+    <Compile Include="src\Main.fs" />
+    <None Include="leak_unsafe.sol" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Data" Version="6.4.0" />
+    <PackageReference Include="Argu" Version="6.2.4" />
+    <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+  </ItemGroup>
+</Project>

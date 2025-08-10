@@ -1,4 +1,4 @@
-namespace Smartian
+namespace IConFuzz
 
 type ConcolicQueue = Queue<Seed>
 

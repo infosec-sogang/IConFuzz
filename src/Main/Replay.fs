@@ -1,4 +1,4 @@
-module Smartian.Replay
+module IConFuzz.Replay
 
 open Argu
 open Utils
@@ -39,7 +39,7 @@ type ReplayOption = {
 }
 
 let parseReplayOption args =
-  let cmdPrefix = "dotnet Smartian.dll replay"
+  let cmdPrefix = "dotnet IConFuzz.dll replay"
   let parser = ArgumentParser.Create<ReplayerCLI> (programName = cmdPrefix)
   let r = try parser.Parse(args) with
           :? Argu.ArguParseException -> printLine (parser.PrintUsage()); exit 1

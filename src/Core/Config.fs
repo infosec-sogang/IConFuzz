@@ -1,4 +1,4 @@
-module Smartian.Config
+module IConFuzz.Config
 
 let Debug = false
 

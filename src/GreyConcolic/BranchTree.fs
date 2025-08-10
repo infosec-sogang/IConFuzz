@@ -1,4 +1,4 @@
-namespace Smartian
+namespace IConFuzz
 
 open System.Collections.Generic
 open System.Collections.Immutable

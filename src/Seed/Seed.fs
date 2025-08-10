@@ -1,4 +1,4 @@
-namespace Smartian
+namespace IConFuzz
 
 open Nethermind.Core.Extensions
 open Config

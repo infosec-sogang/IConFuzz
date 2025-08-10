@@ -1,4 +1,4 @@
-module Smartian.BytesUtils
+module IConFuzz.BytesUtils
 
 open System
 open Utils

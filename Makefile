@@ -1,6 +1,6 @@
 BUILDDIR=$(shell pwd)/build
 
-all: $(BUILDDIR) Smartian
+all: $(BUILDDIR) IConFuzz
 
 clean:
 	@dotnet clean -c Release
@@ -9,7 +9,7 @@ clean:
 $(BUILDDIR):
 	@mkdir -p $(BUILDDIR)
 
-Smartian:
+IConFuzz:
 	@dotnet build -c Release --property:OutputPath=$(BUILDDIR)
 
-.PHONY: all clean Smartian
+.PHONY: all clean IConFuzz

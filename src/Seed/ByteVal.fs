@@ -1,4 +1,4 @@
-namespace Smartian
+namespace IConFuzz
 
 /// Represents the concrete value of a single byte, and its corresponding
 /// 'approximate path condition'. Conceptually, each byte is constrained with a

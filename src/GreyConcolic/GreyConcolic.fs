@@ -1,4 +1,4 @@
-module Smartian.GreyConcolic
+module IConFuzz.GreyConcolic
 
 open Config
 open Utils

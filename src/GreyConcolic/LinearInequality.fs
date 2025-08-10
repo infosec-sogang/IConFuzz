@@ -1,4 +1,4 @@
-namespace Smartian
+namespace IConFuzz
 
 open System
 open Utils

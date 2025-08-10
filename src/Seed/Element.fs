@@ -1,7 +1,8 @@
-namespace Smartian
+namespace IConFuzz
 
 open Config
 open BytesUtils
+open solAnalysis
 
 /// A building block of program input, composed of ByteVal array.
 type Element = {

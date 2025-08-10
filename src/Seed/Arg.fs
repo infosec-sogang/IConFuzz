@@ -1,4 +1,6 @@
-namespace Smartian
+namespace IConFuzz
+
+open solAnalysis
 
 /// Represents a single argument value, composed of Element array.
 type Arg = {
