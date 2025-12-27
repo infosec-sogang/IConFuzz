@@ -13,6 +13,7 @@ type FuzzerCLI =
   | [<AltCommandLine("-b")>] [<Unique>] TargetBug of typeAndAddress: string
   | [<AltCommandLine("-m")>] [<Mandatory>] [<Unique>] MainContract of string
   | [<AltCommandLine("-s")>] [<Unique>] SolcVersion of string
+  | [<AltCommandLine("-a")>] DependencyPreservationRate of rate: int
   | [<Unique>] NoMapKeyConstrs
   | [<Unique>] NoPrivConstrs
   | [<Unique>] NoConstrs
@@ -20,6 +21,7 @@ type FuzzerCLI =
   | [<Unique>] CheckOptionalBugs
   | [<Unique>] UseOthersOracle
   | [<Unique>] InitEther of amount: BigInteger
+
 with
   interface IArgParserTemplate with
     member s.Usage =
@@ -44,6 +46,9 @@ with
         "Target bugs to detect (pairs of bug type and location)\n\
         Ex) -b \"IB:6cb/6cf,EL:transferTo\"\n\
         Note that depending on bug type, location string format differs"
+      | DependencyPreservationRate _ ->
+        "The rate (0-100) to preserve dependencies during mutation\n\
+        (default: 10, higher value means more preservation)."
 
 type FuzzOption = {
   Verbosity         : int
@@ -61,6 +66,7 @@ type FuzzOption = {
   UseOthersOracle   : bool
   InitEther         : BigInteger
   TargetBugs        : (BugClass * string) array
+  DependencyPreservationRate : int
 }
 
 let parseFuzzOption (args: string array) =
@@ -89,4 +95,6 @@ let parseFuzzOption (args: string array) =
     CheckOptionalBugs = r.Contains(<@ CheckOptionalBugs @>)
     UseOthersOracle = r.Contains(<@ UseOthersOracle @>)
     InitEther = r.GetResult (<@ InitEther @>, defaultValue = 100000000000000000000I) // default: 100 ether
-    TargetBugs = targetBugs }
+    TargetBugs = targetBugs 
+    DependencyPreservationRate = r.GetResult (<@ DependencyPreservationRate @>, defaultValue = 10)
+    }

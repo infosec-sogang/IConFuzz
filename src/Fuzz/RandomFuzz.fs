@@ -9,8 +9,7 @@ open Options
 
 let private MUTATE_MAX_POW = 7
 let private ARITH_MAX = 35
-let private DEPENDENCY_PRESERVATION_RATE = 90
-
+let mutable private DEPENDENCY_PRESERVATION_RATE = 10
 
 // Evaluate def - use chain
 let private dependencyPreservation =
@@ -23,18 +22,18 @@ let private constraintsRate (opt: FuzzOption) =
 
 let private filterFuncsByMapKeyCons argName mapKeyChains =
   let defFuncs = mapKeyChains
-                |> Set.filter (fun (f, g, mcs) -> 
+                |> Set.filter (fun (f, g, mcs) ->
                     let filteredMcs = mcs |> Array.filter (fun mc -> mc.UseKeys |> Array.filter (Array.exists (fun k -> k = argName)) |> Array.isEmpty |> not)
-                    not (Array.isEmpty filteredMcs)) 
-                |> Set.map (fun (f, g, mcs) -> 
+                    not (Array.isEmpty filteredMcs))
+                |> Set.map (fun (f, g, mcs) ->
                     let filteredMcs = mcs |> Array.filter (fun mc -> mc.UseKeys |> Array.filter (Array.exists (fun k -> k = argName)) |> Array.isEmpty |> not)
                                           |> Array.map (fun mc -> { mc with UseKeys = mc.UseKeys |> Array.filter (fun k -> Array.contains argName k) })
                     (f, filteredMcs)) |> Set.fold (fun acc (k, v) -> Map.add k v acc) Map.empty
   let useFuncs = mapKeyChains
                 |> Set.filter (fun (f, g, mcs) ->
                 let filteredMcs = mcs |> Array.filter (fun mc -> mc.DefKeys |> Array.filter (Array.exists (fun k -> k = argName)) |> Array.isEmpty |> not)
-                not (Array.isEmpty filteredMcs)) 
-                |> Set.map (fun (f, g, mcs) -> 
+                not (Array.isEmpty filteredMcs))
+                |> Set.map (fun (f, g, mcs) ->
                     let filteredMcs = mcs |> Array.filter (fun mc -> mc.DefKeys |> Array.filter (Array.exists (fun k -> k = argName)) |> Array.isEmpty |> not)
                                           |> Array.map (fun mc -> { mc with DefKeys = mc.DefKeys |> Array.filter (fun k -> Array.contains argName k) })
                     (g, filteredMcs)) |> Set.fold (fun acc (k, v) -> Map.add k v acc) Map.empty
@@ -43,9 +42,9 @@ let private filterFuncsByMapKeyCons argName mapKeyChains =
 let private filterFuncsByPrivCons argName privChains =
   let filteredChains = privChains
                       |> Set.filter (fun (f, g, (defPC, usePC)) -> (Array.exists (fun (x, y, b) -> y = argName) usePC.Uses))
-  let defFuncs = filteredChains |> Set.map (fun (f, g, (defAC, useAC)) -> (f, defAC)) 
+  let defFuncs = filteredChains |> Set.map (fun (f, g, (defAC, useAC)) -> (f, defAC))
                   |> Set.fold (fun acc (k, v) -> Map.add k v acc) Map.empty
-  let useFuncs = filteredChains |> Set.map (fun (f, g, (defAC, useAC)) -> (g, useAC)) 
+  let useFuncs = filteredChains |> Set.map (fun (f, g, (defAC, useAC)) -> (g, useAC))
                   |> Set.fold (fun acc (k, v) -> Map.add k v acc) Map.empty
   (defFuncs, useFuncs)
 
@@ -53,9 +52,9 @@ let private filterTxsWithMapKeyChains seed func argName txIdx mapKeyChains =
   let defs, uses = filterFuncsByMapKeyCons argName mapKeyChains
   let defTxs = if txIdx = 1 then [||] else seed.Transactions.[0 .. txIdx - 1]
   let useTxs = if txIdx = (Array.length seed.Transactions) - 1 then [||] else seed.Transactions.[txIdx + 1 ..]
-  let defTxs = defTxs |> Array.mapi (fun i tx -> 
+  let defTxs = defTxs |> Array.mapi (fun i tx ->
     if (Map. containsKey tx.FuncSpec.Name defs) && i <> 0 then Some (i, Map.find tx.FuncSpec.Name defs) else None) |> Array.choose id
-  let useTxs = useTxs |> Array.mapi (fun i tx -> 
+  let useTxs = useTxs |> Array.mapi (fun i tx ->
     if (Map. containsKey tx.FuncSpec.Name uses) && i <> 0 then Some (i, Map.find tx.FuncSpec.Name uses) else None) |> Array.choose id
   (defTxs, useTxs)
 
@@ -63,7 +62,7 @@ let private filterTxsWithPrivChains seed func argName txIdx privChains =
   let defs, uses = filterFuncsByPrivCons argName privChains
   let defTxs = if txIdx = 1 then [||] else seed.Transactions.[0 .. txIdx - 1]
   let useTxs = if txIdx = (Array.length seed.Transactions) - 1 then [||] else seed.Transactions.[txIdx + 1 ..]
-  let defTxs = defTxs |> Array.mapi (fun i tx -> 
+  let defTxs = defTxs |> Array.mapi (fun i tx ->
     if (Map. containsKey tx.FuncSpec.Name defs) && i <> 0 then Some (i, Map.find tx.FuncSpec.Name defs) else None) |> Array.choose id
   let useTxs = useTxs |> Array.mapi (fun i tx ->
     if (Map. containsKey tx.FuncSpec.Name uses) && i <> 0 then Some (i, Map.find tx.FuncSpec.Name uses) else None) |> Array.choose id
@@ -77,7 +76,7 @@ let private isPrivilegeConstraints seed func argName txIdx privChains =
   let defTxs, useTxs = filterTxsWithPrivChains seed func argName txIdx privChains
   if Array.length defTxs = 0 && Array.length useTxs = 0 then false else true
 
-let private evaluateSeedDUChain seed newSeed = 
+let private evaluateSeedDUChain seed newSeed =
   let txs = seed.Transactions |> Array.map (fun tx -> tx.FuncSpec.Name) |> Array.toList
   let newTxs = newSeed.Transactions |> Array.map (fun tx -> tx.FuncSpec.Name) |> Array.toList
   // Compare the def-use chains of the two seeds (except the deploying transaction).
@@ -119,10 +118,10 @@ let private insertTransaction contSpec seed =
 let private shuffleTransaction duchains seed =
   let txNum = Seed.getTransactionCount seed
   if txNum < 3 then seed
-  else // Avoid shuffling with the deploying transaction. 
+  else // Avoid shuffling with the deploying transaction.
     match randomSelect (List.ofSeq { 1 .. (txNum - 1) }) 2 with
-    | [idx1; idx2] -> 
-      let newSeed = Seed.swapTransactions seed idx1 idx2 
+    | [idx1; idx2] ->
+      let newSeed = Seed.swapTransactions seed idx1 idx2
       if evaluateSeedDUChain seed newSeed then newSeed
       else if dependencyPreservation then seed else newSeed
     | _ -> failwith "Unreachable"
@@ -138,7 +137,7 @@ let private removeTransaction duchains seed =
     else if dependencyPreservation then seed else newSeed
 
 let private findArgIdx tx key =
-  let args = tx.Args 
+  let args = tx.Args
   let argIdx = Array.tryFindIndex (fun arg -> arg.Spec.Name = key) args
   match argIdx with
   | Some idx -> idx
@@ -148,13 +147,13 @@ let makeKeyAsSame seed defIdx useIdx keyIdx1 keyIdx2 =
   let defTx, useTx = seed.Transactions.[defIdx], seed.Transactions.[useIdx]
   let newTxs = Array.copy seed.Transactions
   match keyIdx1, keyIdx2 with
-  | -1, -1 -> 
+  | -1, -1 ->
     let newSender = Sender.pick()
     let newDefTx, newUseTx = { defTx with Sender = newSender }, { useTx with Sender = newSender }
     newTxs.[defIdx] <- newDefTx
     newTxs.[useIdx] <- newUseTx
     { seed with Transactions = newTxs }
-  | -1, _ -> 
+  | -1, _ ->
     let newSender = Sender.pick()
     let newBytes = Address.contractOf newSender |> Address.toBytes LE
     let newDefTx = { defTx with Sender = newSender }
@@ -185,13 +184,13 @@ let makeKeyAsDifferent seed defIdx useIdx keyIdx1 keyIdx2 =
   let defTx, useTx = seed.Transactions.[defIdx], seed.Transactions.[useIdx]
   let newTxs = Array.copy seed.Transactions
   match keyIdx1, keyIdx2 with
-  | -1, -1 -> 
+  | -1, -1 ->
     let (newSender1, newSender2) = Sender.picktwo()
     let newDefTx, newUseTx = { defTx with Sender = newSender1 }, { useTx with Sender = newSender2 }
     newTxs.[defIdx] <- newDefTx
     newTxs.[useIdx] <- newUseTx
     { seed with Transactions = newTxs }
-  | -1, _ -> 
+  | -1, _ ->
     let (newSender1, newSender2) = Sender.picktwo()
     let newDefTx = { defTx with Sender = newSender1 }
     let newBytes = Address.contractOf newSender2 |> Address.toBytes LE
@@ -228,7 +227,7 @@ let private makeMappingAddressesAsSame seed defIdx useIdx (defKey: key) (useKey:
     let useKey1, useKey2 = useKey.[0], useKey.[1]
     let defIdx1, defIdx2 = findArgIdx defTx defKey1, findArgIdx defTx defKey2
     let useIdx1, useIdx2 = findArgIdx useTx useKey1, findArgIdx useTx useKey2
-    let newSeed = makeKeyAsSame seed defIdx useIdx defIdx1 useIdx1 
+    let newSeed = makeKeyAsSame seed defIdx useIdx defIdx1 useIdx1
     makeKeyAsSame newSeed defIdx useIdx defIdx2 useIdx2
   | 1 -> // mapping[key]
     let defIdx1, useIdx1 = findArgIdx defTx defKey.[0], findArgIdx useTx useKey.[0]
@@ -258,7 +257,7 @@ let private mutateAddresswithMapKeyCons seed func argName txIdx mapKeyChains =
   let defTxNum, useTxNum = Array.length defTxs, Array.length useTxs
   match defTxNum, useTxNum with
   | 0, 0 -> seed
-  | 0, _ -> 
+  | 0, _ ->
     let selectedIdx = random.Next(useTxNum)
     let idx2, ics = useTxs.[selectedIdx]
     mutateMappingKeys seed txIdx idx2 argName 0 ics
@@ -268,7 +267,7 @@ let private mutateAddresswithMapKeyCons seed func argName txIdx mapKeyChains =
     mutateMappingKeys seed idx2 txIdx argName 1 ics
   | _, _ ->
     match random.Next(2) with
-    | 0 -> 
+    | 0 ->
       let selectedIdx = random.Next(useTxNum)
       let idx2, ics = useTxs.[selectedIdx]
       mutateMappingKeys seed txIdx idx2 argName 0 ics
@@ -292,12 +291,12 @@ let private mutateAddressByPrivCons seed defTxIdx useTxIdx argName privChains =
   if List.length chain = 0 then seed
   else
     let _, _, (defAC, useAC) = chain.[random.Next(List.length chain)]
-    let defArg = 
+    let defArg =
       let candidates = Array.filter (fun (x, y) -> if y = argName then true else false) defAC.Defs
       defAC.Defs.[random.Next(Array.length candidates)] |> snd
-    let useArg, opt = 
+    let useArg, opt =
       let candidates = Array.filter (fun (x, y, b) -> if y = argName then true else false) useAC.Uses
-      let _, arg, opt = useAC.Uses.[random.Next(Array.length useAC.Uses)] 
+      let _, arg, opt = useAC.Uses.[random.Next(Array.length useAC.Uses)]
       (arg, opt)
     mutateAddressWithOption seed defTxIdx useTxIdx defArg useArg opt
 
@@ -316,7 +315,7 @@ let private mutateAddresswithPrivCons seed func argName txIdx privChains =
     mutateAddressByPrivCons seed idx2 txIdx argName privChains
   | _, _ -> // Mutate the address of either the def or use transaction.
     match random.Next(2) with
-    | 0 -> 
+    | 0 ->
       let selectedIdx = random.Next(useTxNum)
       let idx2, uses = useTxs.[selectedIdx]
       mutateAddressByPrivCons seed txIdx idx2 argName privChains
@@ -473,13 +472,13 @@ let private mutateArrayLength seed arg =
     | Array (size, elemTyp) ->
       match size with
       | FixedSize _ -> arg.Elems
-      | UnfixedSize -> 
-        let curSize = Array.length arg.Elems 
+      | UnfixedSize ->
+        let curSize = Array.length arg.Elems
         let newSize = random.Next(1, 5)
         match elemTyp with
-        | Address -> 
+        | Address ->
           Array.init newSize (
-            fun _ -> 
+            fun _ ->
             let bytes = Address.pickInteresting() |> Address.toBytes LE
             let byteVals = Array.map ByteVal.newByteVal bytes
             { ElemType = Address
@@ -508,12 +507,12 @@ let private mutateTransactionArg opt seed mapKeyChains privChains =
     | Array (_, elemTyp) ->
       match elemTyp with
       | Array _ -> mutate curElem
-      | Address -> 
+      | Address ->
         // Mutate the address type argument or the array length (90% chance)
-        if random.Next(100) < 90 then 
+        if random.Next(100) < 90 then
           mutateAddressTypeArg opt seed arg txIdx curElem mapKeyChains privChains
         else mutateArrayLength seed arg
-      | _ -> 
+      | _ ->
         if random.Next(100) < 90 then mutate curElem
         else mutateArrayLength seed arg
     | Address -> mutateAddressTypeArg opt seed arg txIdx curElem mapKeyChains privChains
@@ -551,5 +550,7 @@ let private repRandMutate opt contSpec duchains mapKeyChains privChains seed =
   |> Seed.resetBlockData
 
 let run seed opt contSpec duchains mapKeyChains privChains =
+  DEPENDENCY_PRESERVATION_RATE <- opt.DependencyPreservationRate
+
   List.init Config.RAND_FUZZ_TRY_PER_SEED (fun _ -> repRandMutate opt contSpec duchains mapKeyChains privChains seed)
   |> List.filter (TCManage.evalAndSave opt)
