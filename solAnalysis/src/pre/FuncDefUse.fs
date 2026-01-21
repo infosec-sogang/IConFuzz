@@ -51,14 +51,12 @@ let rec get_def_set_lv lv =
   match lv with
   | Var (id,vinfo) -> Set.singleton id
   | MemberAccess (e,"length",info,_) -> Set.singleton "@L"
-  | MemberAccess (e,"balance",info,_) ->
-    let _ = assert (info.vtyp = EType (UInt 256)) 
-    let _ = assert (is_address (get_type_exp e))
-    Set.singleton "@B"
+  | MemberAccess (e,"balance",info,_) -> Set.singleton "@B"
   | MemberAccess (e,x,xinfo,_) -> Set.singleton x
   (* | MemberAccess (Lv lv,x,xinfo,_) -> get_def_set_lv lv *)
   | IndexAccess (Lv lv,_,_) -> get_def_set_lv lv
   | IndexAccess (Cast (_, Lv lv),_,_) -> get_def_set_lv lv
+  | IndexAccess (e,_,_) -> Set.map fst (var_exp e) (* fallback for other IndexAccess patterns *)
   | Tuple (eops,_) ->
     List.fold (fun acc eop ->
       match eop with

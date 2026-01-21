@@ -29,7 +29,7 @@ let private initializeWithoutDFA opt =
 
 let private initializeWithDFA (opt: FuzzOption) =
   let prog = program_file
-  let outdir, mainContract, solv, cfg = opt.OutDir, opt.MainContract, "0.4.18", false
+  let outdir, mainContract, solv, cfg = opt.OutDir, opt.MainContract, opt.SolcVersion, false
   let opt' = { Input = prog; OutDir = outdir; Solv = solv; Main = mainContract; Cfg = cfg }
   let contSpec, seqs, duchains, mapKeyChains, privChains = TopLevel.run opt'
   if List.isEmpty seqs // No DU chain at all.

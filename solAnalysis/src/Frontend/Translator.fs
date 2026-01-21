@@ -283,29 +283,35 @@ and trans_expression : JsonValue -> exp  =
     | JsonValue.String "Literal" ->
         match json?kind with
         | JsonValue.String "number" ->
-            let st = json?subdenomination.AsString()
             let factor =
-                match json?subdenomination with
-                | JsonValue.Null -> 1.
-                | _ when st = "wei" -> 1. 
-                | _ when st = "szabo" -> 1e12
-                | _ when st = "finney" -> 1e15
-                | _ when st = "ether" -> 1e18
-                | _ when st = "seconds" -> 1.
-                | _ when st = "minutes" -> 60.
-                | _ when st = "hours" -> 3600.
-                | _ when st = "days" -> 86400. (* 24*3600 *)
-                | _ when st = "weeks" -> 604800. (* 7*24*3600 *)
-                | _ when st = "years" -> 31536000. (* 365 * 86400 *)
-                | _ when st = "gwei" -> 1e9
-                | _ -> failwith "Assertion failed"
+                match json.TryGetProperty("subdenomination") with
+                | None -> 1.
+                | Some JsonValue.Null -> 1.
+                | Some sub ->
+                    match sub.AsString() with
+                    | "wei" -> 1. 
+                    | "szabo" -> 1e12
+                    | "finney" -> 1e15
+                    | "ether" -> 1e18
+                    | "seconds" -> 1.
+                    | "minutes" -> 60.
+                    | "hours" -> 3600.
+                    | "days" -> 86400. (* 24*3600 *)
+                    | "weeks" -> 604800. (* 7*24*3600 *)
+                    | "years" -> 31536000. (* 365 * 86400 *)
+                    | "gwei" -> 1e9
+                    | _ -> 1.
             let str = json?value.AsString() 
+            let hasSubdenomination = 
+                match json.TryGetProperty("subdenomination") with
+                | None -> false
+                | Some JsonValue.Null -> false
+                | Some _ -> true
             match (snd typ) with
             (* float_of_string "0xffffffffffffffffffffffff0000000000000000000000000000000000000000" loses precision *)
             (* Thus, directly convert into BatBig_int *)
             | ConstInt ->
-                match json?subdenomination with
-                | JsonValue.Null when not (str.Contains("e")) ->
+                if not hasSubdenomination && not (str.Contains("e")) then
                     if str.StartsWith("0x") then
                         let value = BigInteger.Parse(str.[2..], System.Globalization.NumberStyles.HexNumber)
                         Cast (EType Address, Int (value))
@@ -314,7 +320,7 @@ and trans_expression : JsonValue -> exp  =
                         Int (BigInteger (value * factor))
                     else
                         Int (BigInteger.Parse(str))
-                | _ ->
+                else
                     if str.StartsWith("0x") then
                         let value = BigInteger.Parse(str.[2..], System.Globalization.NumberStyles.HexNumber)
                         Cast (EType Address, Int (value * (BigInteger factor)))
@@ -758,9 +764,9 @@ let rec trans_statement : JsonValue -> stmt =
                         None
                     ) decl
                 Tuple (elst, Void)
-        match json?initialValue with
-        | JsonValue.Null -> Decl lv
-        | exp -> Assign (lv, trans_expression exp, loc)
+        match json.TryGetProperty("initialValue") with
+        | None | Some JsonValue.Null -> Decl lv
+        | Some exp -> Assign (lv, trans_expression exp, loc)
     | JsonValue.String "ExpressionStatement" -> trans_expressionStatement json
     | JsonValue.String "PlaceholderStatement" -> PlaceHolder
     | JsonValue.String "ForStatement" ->
@@ -782,9 +788,10 @@ let rec trans_statement : JsonValue -> stmt =
         let cond = json?condition |> trans_expression 
         let tbody, tloc = json?trueBody |> trans_statement, json?trueBody |> get_loc 
         let fbody, floc =
-            match json?falseBody with
-            | JsonValue.Null -> (Skip, None)
-            | fb -> (trans_statement fb, Some (get_loc fb)) 
+            match json.TryGetProperty("falseBody") with
+            | None -> (Skip, None)
+            | Some JsonValue.Null -> (Skip, None)
+            | Some fb -> (trans_statement fb, Some (get_loc fb)) 
         let ifinfo = {if_loc = loc; if_tloc = tloc; if_floc = floc} 
         If (cond, tbody, fbody, ifinfo)
 
@@ -815,8 +822,8 @@ let rec trans_statement : JsonValue -> stmt =
         Assembly (var_refid_pairs, loc)
     | JsonValue.String "UncheckedBlock" ->
         let slst = 
-            match json?declarations with
-            | JsonValue.Array items -> List.map trans_statement (Array.toList items)
+            match json.TryGetProperty("statements") with
+            | Some (JsonValue.Array items) -> List.map trans_statement (Array.toList items)
             | _ -> []
         Unchecked (slst,loc)
     | JsonValue.String "TryStatement" ->
@@ -843,6 +850,7 @@ let rec trans_statement : JsonValue -> stmt =
                 If (Lv (gen_tmpvar {Org=None;Loc=None;Typ=EType Bool;TypeStr="bool"}), stmt, f (i+1) tl, dummy_ifinfo)
         f 0 clauses
 
+    | JsonValue.String "RevertStatement" -> Throw
     | JsonValue.String s -> raise (Failure ("Unsupported: trans_statement - " + s + " : line " + string loc.line))
     | _ -> failwith "Assertion failed"
 
@@ -872,7 +880,10 @@ let trans_modifierInvocation : JsonValue -> mod_call =
     fun json ->
     if not (json?nodeType.AsString() = "ModifierInvocation") then failwith "Assertion failed"
     let name = json?modifierName?name.AsString()
-    let args = json?arguments |> trans_functionCallArguments 
+    let args = 
+        match json.TryGetProperty("arguments") with
+        | None -> []
+        | Some args -> args |> trans_functionCallArguments
     let loc = get_loc json 
     (name, args, loc)
 
@@ -881,7 +892,10 @@ let trans_inheritanceSpecifier : JsonValue -> mod_call =
     fun json ->
     if not (json?nodeType.AsString() = "InheritanceSpecifier") then failwith "Assertion failed"
     let name = json?baseName?name.AsString() 
-    let args = json?arguments |> trans_functionCallArguments 
+    let args = 
+        match json.TryGetProperty("arguments") with
+        | None -> []
+        | Some args -> args |> trans_functionCallArguments
     let loc = get_loc json 
     (name, args, loc)
 
@@ -985,9 +999,10 @@ let trans_contractDefinition : string list -> JsonValue -> contract =
         | JsonValue.String "VariableDeclaration" ->
             let (vname,vinfo) = trans_variable_declaration j 
             let expop =
-                match j?value with
-                | JsonValue.Null -> None
-                | exp -> Some (trans_expression exp)
+                match j.TryGetProperty("value") with
+                | None -> None
+                | Some JsonValue.Null -> None
+                | Some exp -> Some (trans_expression exp)
             let decl = (vname, expop, vinfo) 
             (cid, decl::gvar_decls, structs, enums, func_defs, cinfo)
         | JsonValue.String "EventDefinition" -> (* Event is modeled as a function with internal visibility and a skip body *)
